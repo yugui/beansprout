@@ -83,7 +83,7 @@ class Importer(csvbase.Importer):
     subcategory = csvbase.Column(
         6)  # Column 7: Subcategory (中項目) e.g., 昼ご飯 (lunch), 医療費 (medical)
     memo = csvbase.Column(7)  # Column 8: Notes/Memo (メモ)
-    status = csvbase.Column(8)  # Column 9: Status flag (ステータス) (0 or 1)
+    status = csvbase.Column(8)  # Column 9: Transfer flag (振替) (0 or 1)
     id = csvbase.Column(9)  # Column 10: Unique transaction ID
 
     def __init__(
@@ -192,7 +192,8 @@ class Importer(csvbase.Importer):
         meta['id'] = row.id
         return meta
 
-    def finalize(self, txn: data.Transaction, row: Any) -> Optional[data.Transaction]:
+    def finalize(self, txn: data.Transaction,
+                 row: Any) -> Optional[data.Transaction]:
         """Post process the transaction.
 
         Args:
@@ -210,23 +211,43 @@ class Importer(csvbase.Importer):
         posting = txn.postings[0]
         amount_value = posting.units.number
 
-        # Determine the account based on the amount and category
-        if amount_value < 0:
-            # Expense transaction
-            account = self._get_expense_account(row.category, row.subcategory)
-            # Make the amount positive for the expense posting
-            units = data.Amount(-amount_value, posting.units.currency)
+        # Check if this is a transfer transaction
+        if row.status == "1":
+            # This is a transfer transaction
+            destination_account = self._guess_transfer_destination_account(
+                row.category, row.subcategory, row.memo, row.narration)
+
+            if destination_account is not None:
+                # Create a new posting for the destination account
+                units = data.Amount(-amount_value, posting.units.currency)
+                new_posting = data.Posting(destination_account, units, None,
+                                           None, None, None)
+
+                # Update the transaction with both postings
+                txn = txn._replace(postings=[posting, new_posting])
+            else:
+                # Leave the transaction unbalanced if we can't determine the destination account
+                pass
         else:
-            # Income transaction
-            account = self._get_income_account(row.category, row.subcategory)
-            # Keep the amount positive for the income posting
-            units = data.Amount(amount_value, posting.units.currency)
+            # Regular income/expense transaction
+            if amount_value < 0:
+                # Expense transaction
+                account = self._get_expense_account(row.category,
+                                                    row.subcategory)
+                # Make the amount positive for the expense posting
+                units = data.Amount(-amount_value, posting.units.currency)
+            else:
+                # Income transaction
+                account = self._get_income_account(row.category,
+                                                   row.subcategory)
+                # Keep the amount positive for the income posting
+                units = data.Amount(amount_value, posting.units.currency)
 
-        # Create a new posting for the expense/income account
-        new_posting = data.Posting(account, units, None, None, None, None)
+            # Create a new posting for the expense/income account
+            new_posting = data.Posting(account, units, None, None, None, None)
 
-        # Update the transaction with both postings
-        txn = txn._replace(postings=[posting, new_posting])
+            # Update the transaction with both postings
+            txn = txn._replace(postings=[posting, new_posting])
 
         # Set the flag based on the MoneyForward ME flag
         flag = '*' if row.flag == '1' else '!'
@@ -273,3 +294,25 @@ class Importer(csvbase.Importer):
 
         # Return the default income account
         return self.default_income_account
+
+    def _guess_transfer_destination_account(self, category: str,
+                                            subcategory: str, memo: str,
+                                            notes: str) -> Optional[str]:
+        """Guess the destination account for a transfer transaction.
+        
+        This method attempts to determine the destination account for a transfer
+        transaction based on the category, subcategory, memo, and notes.
+        
+        Args:
+            category: The MoneyForward ME category.
+            subcategory: The MoneyForward ME subcategory.
+            memo: The memo field from the transaction.
+            notes: Additional notes from the transaction.
+            
+        Returns:
+            The destination account name if it can be determined, None otherwise.
+        """
+        # Initial implementation returns None
+        # This can be extended in the future to guess the destination account
+        # based on patterns in the category, subcategory, memo, and notes
+        return None
