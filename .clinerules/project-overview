@@ -1,0 +1,90 @@
+# BeanCount
+
+This project provides a set of custom commands and their underlying python
+packages on top of the Beancount doube-entry bookkeeping system.
+
+# Architecture
+You can refer the following docs for the basic idea of Beancount:
+* [Beancount User's Manual](https://beancount.github.io/docs/index.html)
+  * [Getting Started with Beancount](https://beancount.github.io/docs/getting_started_with_beancount.html)
+  * [Beancount Language Syntax](https://beancount.github.io/docs/beancount_language_syntax.html)
+  * [Beancount v3 Design Doc](https://docs.google.com/document/d/1qPdNXaz5zuDQ8M9uoZFyyFis7hA0G55BEfhWhrVBsfc/edit?tab=t.0)
+* [Fava](https://beancount.github.io/fava/index.html) gives web UI for leadgers
+  in the beancount format.
+
+Beancount supports custom extensions of price quotes of commodities, importing
+transactions from other formats, and more pages in the Fava UI.
+You can write python libraries on top of the APIs in the following pypi packages
+when you want to give such customizations:
+* `beancount` -- The basic package
+* `beangulp` -- The framework for custom transaction importers
+* `beanprice` -- The price quotes fetcher
+* `fava` -- The web UI
+
+The custom packages and commands in this repository are built with Bazel.
+
+# Source Structure
+* `third_party/` -- any third-party library dependencies
+* `src/main/python` -- root directory for the custom python packages
+* `src/main/python/importers` -- custom importer libraries
+* `src/main/python/sources` -- custom price quoters
+
+## Coding Principles
+
+### Python
+* Python files have docstrings at the top of the file, and all functions and
+  classes. The docstrings should be maintained consistently with the code.
+* All functions have type hints.
+* Prefer named parameters over positional parameters when you call a function
+  with more than 3 parameters or when the parameters are not self-explanatory.
+
+# Development Process
+You do not need to always implement everything at once. You need to first
+propose a intermediate goal and get approved on it. Then, you explain the
+design to achieve the goal, and finally implement it.
+
+## Testing
+Implementations should be tested with unit tests. Test files are along with the
+test target files in the same directory.
+
+You need to use Bazel to run thest tests.
+
+## Formatting
+The code should be formatted with the following formatters before you make git
+commits.
+
+* `buildifier` -- for Bazel files
+* `yapf` -- for python files. You need to pass `-i` option to in-place edit.
+
+## Git commit
+Git commits should have descriptions that explain the design overview in the
+code change. The descriptions should not repeat the code-level changes.
+
+You must guarantee that the code is well-tested and formatted before you make
+a git commit.
+
+# Third-party dependencies
+You need to maintain the third-party dependencies in the `third_party/`
+directory.
+
+`reqruirements.in` in the directory defines the direct dependencies on PyPI
+packages. You need to run `bazel run //third_party:requirements.update` to
+consistently update `requirements_lock.txt`.
+
+You can make sure that the dependencies are locally available by running
+`bazel build @beancount_deps//...`. Then, you will have the dependency
+packages resolved and downloaded in the `bazel-beancount/external/` directory.
+You can refer the files under the directory to see the source of the packages
+like `beancount`, `beangulp`.
+
+# API References
+You can refer the following reference implementations and API references for
+the custom packages:
+
+* https://beancount.github.io/docs/api_reference/index.html for the Beancount
+  package
+* `examples/` directory in the `beangulp` package for custom importers
+* `beanprice/sources` directory in the `beanprice` package for custom price
+  quoters.
+* [Fava API Reference](https://beancount.github.io/fava/api.html) for Fava UI
+  extensions
