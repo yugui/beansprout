@@ -2,7 +2,7 @@
 
 This module provides a supervised multi-class classification algorithm that
 predicts destination ledger account names from transaction data. It works with
-no initial training data by falling back to a default account, and improves
+no initial training data by returning None when confidence is low, and improves
 predictions as it learns from more examples.
 
 # Implementation Summary
@@ -23,7 +23,7 @@ The implementation uses a Naive Bayes classifier with TF-IDF weighted features:
    - Calculates likelihoods using Naive Bayes with TF-IDF weighting
    - Applies belonging account bias based on observed patterns
    - Returns the most likely account with a confidence score
-   - Falls back to the default account when confidence is low
+   - Returns None when confidence is below threshold
 
 4. **Persistence**:
    - Supports saving and loading the trained model
@@ -35,7 +35,7 @@ The implementation uses a Naive Bayes classifier with TF-IDF weighted features:
   - Belonging ledger account (e.g., Assets:Cash:Wallet)
   - Transaction narration
   - Posting narration for each posting
-- **Zero-shot Learning**: Works with no initial training data by falling back to a default account
+- **Zero-shot Learning**: Works with no initial training data by returning None when confidence is low
 - **Lightweight Implementation**: Requires no GPU and minimal resources
 - **Incremental Learning**: Improves predictions as it learns from more examples
 
@@ -46,7 +46,6 @@ from importers.account_predictor import AccountPredictor
 
 # Create a predictor instance
 predictor = AccountPredictor(
-    default_account="Expenses:Uncategorized",
     min_confidence=0.6,
 )
 
@@ -80,7 +79,26 @@ import collections
 import math
 import pickle
 import re
-from typing import Dict, List, Optional, Set, Tuple, Counter as CounterType
+from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Counter as CounterType
+
+from importers.tokenizer import Tokenizer
+
+
+class TrainingData(NamedTuple):
+    """Training data for the account predictor.
+
+    Attributes:
+        belonging_account: The account the transaction belongs to.
+        transaction_narration: The narration of the transaction.
+        posting_narration: The narration of the posting.
+        correct_account: The correct account for the transaction.
+        hint: Optional list of strings to provide hints for account prediction.
+    """
+    belonging_account: str
+    transaction_narration: str
+    posting_narration: str
+    correct_account: str
+    hint: List[str]
 
 
 class AccountPredictor:
@@ -92,7 +110,7 @@ class AccountPredictor:
     
     Key features:
     - Uses Naive Bayes with TF-IDF weighting for accurate predictions
-    - Handles zero-shot learning by falling back to a default account
+    - Handles zero-shot learning by returning None when confidence is low
     - Learns incrementally as new examples are provided
     - Considers belonging account patterns to improve predictions
     - Provides confidence scores for predictions
@@ -109,16 +127,15 @@ class AccountPredictor:
     belonging accounts and destination accounts.
     """
 
-    def __init__(self, default_account: str, min_confidence: float = 0.5):
+    def __init__(self, min_confidence: float = 0.5):
         """Initialize the account predictor.
         
         Args:
-            default_account: The default account to use when confidence is low.
             min_confidence: The minimum confidence threshold to use the predicted
-                account instead of the default account.
+                account.
         """
-        self.default_account = default_account
         self.min_confidence = min_confidence
+        self.tokenizer = Tokenizer()
 
         # Account frequency counter
         self.account_counts: CounterType[str] = collections.Counter()
@@ -147,31 +164,18 @@ class AccountPredictor:
             str,
             CounterType[str]] = collections.defaultdict(collections.Counter)
 
-    def _tokenize(self, text: str) -> List[str]:
-        """Convert text to a list of tokens.
-        
-        Args:
-            text: The text to tokenize.
-            
-        Returns:
-            A list of tokens.
-        """
-        if not text:
-            return []
-
-        # Convert to lowercase and split on non-alphanumeric characters
-        tokens = re.findall(r'\b\w+\b', text.lower())
-        return tokens
-
-    def _extract_features(self, belonging_account: str,
+    def _extract_features(self,
+                          belonging_account: str,
                           transaction_narration: str,
-                          posting_narration: str) -> List[str]:
+                          posting_narration: str,
+                          hint: Optional[List[str]] = None) -> List[str]:
         """Extract features from a transaction.
         
         Args:
             belonging_account: The account the transaction belongs to.
             transaction_narration: The narration of the transaction.
             posting_narration: The narration of the posting.
+            hint: Optional list of strings to provide hints for account prediction.
             
         Returns:
             A list of features.
@@ -189,17 +193,22 @@ class AccountPredictor:
 
         # Add transaction narration tokens
         if transaction_narration:
-            for token in self._tokenize(transaction_narration):
+            for token in self.tokenizer.tokenize(transaction_narration):
                 features.append(f"txn:{token}")
 
         # Add posting narration tokens
         if posting_narration:
-            for token in self._tokenize(posting_narration):
+            for token in self.tokenizer.tokenize(posting_narration):
                 features.append(f"post:{token}")
+
+        # Add hint tokens
+        if hint:
+            for token in hint:
+                features.append(f"hint:{token}")
 
         return features
 
-    def train(self, examples: List[Tuple[str, str, str, str]]) -> None:
+    def train(self, examples: List[TrainingData]) -> None:
         """Train the model with a list of examples.
         
         This method resets the model's state and trains it from scratch with the
@@ -214,8 +223,7 @@ class AccountPredictor:
         4. Builds belonging account patterns
         
         Args:
-            examples: A list of tuples containing (belonging_account,
-                transaction_narration, posting_narration, correct_account).
+            examples: A list of TrainingData objects containing training examples.
         """
         # Reset the model before training with new examples
         self.account_counts = collections.Counter()
@@ -230,12 +238,18 @@ class AccountPredictor:
             collections.Counter)
 
         # Train with the provided examples
-        for belonging_account, transaction_narration, posting_narration, correct_account in examples:
-            self.update(belonging_account, transaction_narration,
-                        posting_narration, correct_account)
+        for example in examples:
+            self.update(example.belonging_account,
+                        example.transaction_narration,
+                        example.posting_narration, example.correct_account,
+                        example.hint)
 
-    def update(self, belonging_account: str, transaction_narration: str,
-               posting_narration: str, correct_account: str) -> None:
+    def update(self,
+               belonging_account: str,
+               transaction_narration: str,
+               posting_narration: str,
+               correct_account: str,
+               hint: Optional[List[str]] = None) -> None:
         """Update the model with a single example.
         
         This method incrementally updates the model with a new example without
@@ -254,11 +268,12 @@ class AccountPredictor:
             transaction_narration: The narration of the transaction.
             posting_narration: The narration of the posting.
             correct_account: The correct account for the transaction.
+            hint: Optional list of strings to provide hints for account prediction.
         """
         # Extract features
         features = self._extract_features(belonging_account,
                                           transaction_narration,
-                                          posting_narration)
+                                          posting_narration, hint)
 
         # Update account frequency
         self.account_counts[correct_account] += 1
@@ -288,8 +303,12 @@ class AccountPredictor:
                 seen_words.add(feature)
                 self.word_document_counts[feature] += 1
 
-    def predict(self, belonging_account: str, transaction_narration: str,
-                posting_narration: str) -> Tuple[str, float]:
+    def predict(
+            self,
+            belonging_account: str,
+            transaction_narration: str,
+            posting_narration: str,
+            hint: Optional[List[str]] = None) -> Tuple[Optional[str], float]:
         """Predict the most likely account for a transaction.
         
         This method implements a multi-class classification algorithm that:
@@ -298,25 +317,26 @@ class AccountPredictor:
         3. Calculates likelihoods using Naive Bayes with TF-IDF weighting
         4. Applies a bias based on belonging account patterns
         5. Returns the most likely account with a confidence score
-        6. Falls back to the default account if confidence is below threshold
+        6. Returns None if confidence is below threshold
         
         Args:
             belonging_account: The account the transaction belongs to.
             transaction_narration: The narration of the transaction.
             posting_narration: The narration of the posting.
+            hint: Optional list of strings to provide hints for account prediction.
             
         Returns:
-            A tuple containing the predicted account and the confidence score.
-            The confidence score ranges from 0.0 to 1.0, with higher values
-            indicating greater confidence in the prediction.
+            A tuple containing the predicted account (or None if confidence is too low)
+            and the confidence score. The confidence score ranges from 0.0 to 1.0,
+            with higher values indicating greater confidence in the prediction.
         """
         if self.total_examples == 0:
-            return self.default_account, 0.0
+            return None, 0.0
 
         # Extract features
         features = self._extract_features(belonging_account,
                                           transaction_narration,
-                                          posting_narration)
+                                          posting_narration, hint)
 
         # Check for exact match in training data
         # This helps with test_prediction_exact_match
@@ -374,7 +394,7 @@ class AccountPredictor:
 
         # Find the most likely account
         if not likelihoods:
-            return self.default_account, 0.0
+            return None, 0.0
 
         # Apply belonging account bias
         # This helps with test_belonging_account_patterns
@@ -402,9 +422,9 @@ class AccountPredictor:
             math.exp(score) for score in normalized_likelihoods.values())
         confidence = 1.0 / total if total > 0 else 0.0
 
-        # Use default account if confidence is too low
+        # Return None if confidence is too low
         if confidence < self.min_confidence:
-            return self.default_account, confidence
+            return None, confidence
 
         return best_account[0], confidence
 
@@ -421,7 +441,6 @@ class AccountPredictor:
         with open(filepath, 'wb') as f:
             pickle.dump(
                 {
-                    'default_account': self.default_account,
                     'min_confidence': self.min_confidence,
                     'account_counts': self.account_counts,
                     'total_examples': self.total_examples,
@@ -453,7 +472,7 @@ class AccountPredictor:
         with open(filepath, 'rb') as f:
             data = pickle.load(f)
 
-        predictor = cls(data['default_account'], data['min_confidence'])
+        predictor = cls(data['min_confidence'])
         predictor.account_counts = data['account_counts']
         predictor.total_examples = data['total_examples']
         predictor.account_word_counts = data['account_word_counts']
@@ -464,5 +483,7 @@ class AccountPredictor:
         predictor.known_accounts = data['known_accounts']
         predictor.belonging_account_patterns = data[
             'belonging_account_patterns']
+        # The tokenizer is not saved in the pickle file, so we need to initialize it
+        predictor.tokenizer = Tokenizer()
 
         return predictor

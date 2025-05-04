@@ -11,6 +11,7 @@ from beancount.core import data
 from beancount.parser import cmptest
 
 from importers import moneyforward
+from importers.account_predictor import AccountPredictor
 
 
 class TestMoneyForwardImporter(cmptest.TestCase):
@@ -35,9 +36,13 @@ class TestMoneyForwardImporter(cmptest.TestCase):
         with open(self.csv_filename, 'wb') as f:
             f.write(csv_content)
 
+        # Create an account predictor
+        self.account_predictor = AccountPredictor(min_confidence=0.6, )
+
         # Create an importer instance
         self.importer = moneyforward.Importer(
             wallet_account="Assets:Cash:Wallet",
+            account_predictor=self.account_predictor,
             expense_accounts={
                 "食費": "Expenses:Food",
                 "食費:昼ご飯": "Expenses:Food:Lunch",
@@ -137,7 +142,8 @@ class TestMoneyForwardImporter(cmptest.TestCase):
         self.assertEqual('給与', entry4.meta['subcategory'])
         self.assertEqual('1月分', entry4.meta['memo'])
         self.assertEqual('mnopqr123456', entry4.meta['id'])
-        self.assertEqual(1, len(entry4.postings))  # Only one posting for transfer transactions
+        # Only one posting for transfer transactions
+        self.assertEqual(1, len(entry4.postings))
         self.assertEqual('Assets:Cash:Wallet', entry4.postings[0].account)
         self.assertEqual(250000, entry4.postings[0].units.number)
         self.assertEqual('JPY', entry4.postings[0].units.currency)

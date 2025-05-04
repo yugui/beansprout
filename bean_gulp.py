@@ -3,11 +3,12 @@
 import os
 import beangulp
 from importers.moneyforward import Importer as MoneyForwardImporter
+from importers.account_predictor import AccountPredictor
 
 # Define static file paths for account mappings
 # Use absolute paths to ensure files are found regardless of working directory
-EXPENSE_ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     "data", "expense_accounts.tsv")
+EXPENSE_ACCOUNTS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "expense_accounts.tsv")
 INCOME_ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "data", "income_accounts.tsv")
 
@@ -42,12 +43,27 @@ def main():
     expense_accounts = load_account_mappings(EXPENSE_ACCOUNTS_FILE)
     income_accounts = load_account_mappings(INCOME_ACCOUNTS_FILE)
 
+    # Load account predictor from pickle file
+    # Check if the path is provided in an environment variable
+    account_predictor_path = os.environ.get(
+        "BEANGULP_ACCOUNT_PREDICTOR_PATH",
+        os.path.expanduser("~/.cache/beangulp/account-prediction.pickle"))
+    try:
+        account_predictor = AccountPredictor.load(account_predictor_path)
+        print(f"Loaded account predictor from {account_predictor_path}")
+    except FileNotFoundError:
+        print(
+            f"Account predictor file not found at {account_predictor_path}, creating a new one"
+        )
+        account_predictor = AccountPredictor(min_confidence=0.6)
+
     # Define importers
     importers = [
         # MoneyForward ME importer
         # Configure with your wallet account and mappings loaded from TSV files
         MoneyForwardImporter(
             wallet_account="Assets:Cash:Wallet",
+            account_predictor=account_predictor,
             expense_accounts=expense_accounts,
             income_accounts=income_accounts,
             currency="JPY",

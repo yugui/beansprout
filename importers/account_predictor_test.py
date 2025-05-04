@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from importers import account_predictor
+from importers.account_predictor import TrainingData
 
 
 class TestAccountPredictor(unittest.TestCase):
@@ -13,42 +14,71 @@ class TestAccountPredictor(unittest.TestCase):
     def setUp(self):
         """Set up the test case."""
         self.predictor = account_predictor.AccountPredictor(
-            default_account="Expenses:Uncategorized",
-            min_confidence=0.6,
-        )
+            min_confidence=0.6, )
 
         # Sample training data
         self.training_data = [
-            # Format: (belonging_account, transaction_narration, posting_narration, correct_account)
-            ("Assets:Cash:Wallet", "Grocery Store", "Weekly shopping",
-             "Expenses:Food:Groceries"),
-            ("Assets:Cash:Wallet", "Supermarket", "Food",
-             "Expenses:Food:Groceries"),
-            ("Assets:Cash:Wallet", "Restaurant", "Dinner with friends",
-             "Expenses:Food:Restaurant"),
-            ("Assets:Cash:Wallet", "Cafe", "Coffee", "Expenses:Food:Coffee"),
-            ("Assets:Cash:Wallet", "Pharmacy", "Medicine",
-             "Expenses:Health:Medicine"),
-            ("Assets:Cash:Wallet", "Doctor", "Checkup",
-             "Expenses:Health:Doctor"),
-            ("Assets:Cash:Wallet", "Train", "Commute",
-             "Expenses:Transport:Train"),
-            ("Assets:Cash:Wallet", "Bus", "City trip",
-             "Expenses:Transport:Bus"),
-            ("Assets:Cash:Wallet", "Cinema", "Movie night",
-             "Expenses:Entertainment:Movies"),
-            ("Assets:Cash:Wallet", "Bookstore", "New books",
-             "Expenses:Entertainment:Books"),
+            # Format: TrainingData(belonging_account, transaction_narration, posting_narration, correct_account, hint)
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Grocery Store",
+                         posting_narration="Weekly shopping",
+                         correct_account="Expenses:Food:Groceries",
+                         hint=["food", "grocery"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Supermarket",
+                         posting_narration="Food",
+                         correct_account="Expenses:Food:Groceries",
+                         hint=["food", "grocery"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Restaurant",
+                         posting_narration="Dinner with friends",
+                         correct_account="Expenses:Food:Restaurant",
+                         hint=["food", "restaurant"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Cafe",
+                         posting_narration="Coffee",
+                         correct_account="Expenses:Food:Coffee",
+                         hint=["food", "coffee"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Pharmacy",
+                         posting_narration="Medicine",
+                         correct_account="Expenses:Health:Medicine",
+                         hint=["health", "medicine"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Doctor",
+                         posting_narration="Checkup",
+                         correct_account="Expenses:Health:Doctor",
+                         hint=["health", "doctor"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Train",
+                         posting_narration="Commute",
+                         correct_account="Expenses:Transport:Train",
+                         hint=["transport", "train"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Bus",
+                         posting_narration="City trip",
+                         correct_account="Expenses:Transport:Bus",
+                         hint=["transport", "bus"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Cinema",
+                         posting_narration="Movie night",
+                         correct_account="Expenses:Entertainment:Movies",
+                         hint=["entertainment", "movie"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Bookstore",
+                         posting_narration="New books",
+                         correct_account="Expenses:Entertainment:Books",
+                         hint=["entertainment", "book"]),
         ]
 
     def test_initial_state(self):
         """Test the initial state of the predictor."""
-        # With no training data, should return default account with 0 confidence
+        # With no training data, should return None with 0 confidence
         account, confidence = self.predictor.predict("Assets:Cash:Wallet",
                                                      "Unknown Store",
-                                                     "Something")
+                                                     "Something", ["unknown"])
 
-        self.assertEqual(account, "Expenses:Uncategorized")
+        self.assertIsNone(account)
         self.assertEqual(confidence, 0.0)
 
     def test_training(self):
@@ -75,7 +105,8 @@ class TestAccountPredictor(unittest.TestCase):
         # Predict with exact match to training data
         account, confidence = self.predictor.predict("Assets:Cash:Wallet",
                                                      "Grocery Store",
-                                                     "Weekly shopping")
+                                                     "Weekly shopping",
+                                                     ["food", "grocery"])
 
         self.assertEqual(account, "Expenses:Food:Groceries")
         self.assertGreater(confidence, 0.6)  # Should be high confidence
@@ -88,14 +119,16 @@ class TestAccountPredictor(unittest.TestCase):
         # First, let's make sure the predictor has a strong association with grocery-related terms
         # by adding more examples
         self.predictor.update("Assets:Cash:Wallet", "Grocery", "Food",
-                              "Expenses:Food:Groceries")
+                              "Expenses:Food:Groceries", ["food", "grocery"])
         self.predictor.update("Assets:Cash:Wallet", "Local Market",
-                              "Groceries", "Expenses:Food:Groceries")
+                              "Groceries", "Expenses:Food:Groceries",
+                              ["food", "grocery"])
 
         # Predict with similar but not exact match
         account, confidence = self.predictor.predict("Assets:Cash:Wallet",
                                                      "Local Grocery",
-                                                     "Food shopping")
+                                                     "Food shopping",
+                                                     ["food", "grocery"])
 
         # Should match to Expenses:Food:Groceries due to similar words
         self.assertEqual(account, "Expenses:Food:Groceries")
@@ -108,17 +141,16 @@ class TestAccountPredictor(unittest.TestCase):
         # Predict with completely unrelated input
         account, confidence = self.predictor.predict(
             "Assets:Cash:Wallet", "Unknown Place",
-            "Something completely different")
+            "Something completely different", ["unknown"])
 
-        # Should return default account due to low confidence
-        self.assertEqual(account, "Expenses:Uncategorized")
+        # Should return None due to low confidence
+        self.assertIsNone(account)
         self.assertLess(confidence, 0.6)
 
     def test_incremental_learning(self):
         """Test incremental learning."""
-        # Create a new predictor with higher min_confidence to ensure we get the default account initially
+        # Create a new predictor with higher min_confidence to ensure we get None initially
         predictor = account_predictor.AccountPredictor(
-            default_account="Expenses:Uncategorized",
             min_confidence=0.9,  # Very high confidence threshold
         )
 
@@ -128,19 +160,22 @@ class TestAccountPredictor(unittest.TestCase):
 
         # Initial prediction for a new category
         account, confidence1 = predictor.predict("Assets:Cash:Wallet",
-                                                 "Cinema", "Movie night")
+                                                 "Cinema", "Movie night",
+                                                 ["entertainment", "movie"])
 
         # Should be low confidence since we haven't seen movies yet
-        self.assertEqual(account, "Expenses:Uncategorized")
+        self.assertIsNone(account)
 
         # Update with the correct account multiple times to strengthen the association
         for _ in range(3):  # Add multiple examples to increase confidence
             predictor.update("Assets:Cash:Wallet", "Cinema", "Movie night",
-                             "Expenses:Entertainment:Movies")
+                             "Expenses:Entertainment:Movies",
+                             ["entertainment", "movie"])
 
         # Predict again
         account, confidence2 = predictor.predict("Assets:Cash:Wallet",
-                                                 "Cinema", "Movie night")
+                                                 "Cinema", "Movie night",
+                                                 ["entertainment", "movie"])
 
         # Should now predict the correct account with higher confidence
         self.assertEqual(account, "Expenses:Entertainment:Movies")
@@ -163,8 +198,6 @@ class TestAccountPredictor(unittest.TestCase):
                 temp_path)
 
             # Check that the loaded model has the same state
-            self.assertEqual(loaded_predictor.default_account,
-                             self.predictor.default_account)
             self.assertEqual(loaded_predictor.min_confidence,
                              self.predictor.min_confidence)
             self.assertEqual(loaded_predictor.total_examples,
@@ -174,9 +207,11 @@ class TestAccountPredictor(unittest.TestCase):
 
             # Check that predictions have the same account (ignore confidence due to potential floating-point differences)
             original_account, _ = self.predictor.predict(
-                "Assets:Cash:Wallet", "Grocery Store", "Weekly shopping")
+                "Assets:Cash:Wallet", "Grocery Store", "Weekly shopping",
+                ["food", "grocery"])
             loaded_account, _ = loaded_predictor.predict(
-                "Assets:Cash:Wallet", "Grocery Store", "Weekly shopping")
+                "Assets:Cash:Wallet", "Grocery Store", "Weekly shopping",
+                ["food", "grocery"])
 
             self.assertEqual(original_account, loaded_account)
         finally:
@@ -189,26 +224,58 @@ class TestAccountPredictor(unittest.TestCase):
         # Create specific training data with patterns
         pattern_data = [
             # Most transactions from Assets:Cash:Wallet go to Expenses:Food
-            ("Assets:Cash:Wallet", "Store A", "Item", "Expenses:Food"),
-            ("Assets:Cash:Wallet", "Store B", "Item", "Expenses:Food"),
-            ("Assets:Cash:Wallet", "Store C", "Item", "Expenses:Food"),
-            ("Assets:Cash:Wallet", "Store D", "Item", "Expenses:Transport"),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Store A",
+                         posting_narration="Item",
+                         correct_account="Expenses:Food",
+                         hint=["food"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Store B",
+                         posting_narration="Item",
+                         correct_account="Expenses:Food",
+                         hint=["food"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Store C",
+                         posting_narration="Item",
+                         correct_account="Expenses:Food",
+                         hint=["food"]),
+            TrainingData(belonging_account="Assets:Cash:Wallet",
+                         transaction_narration="Store D",
+                         posting_narration="Item",
+                         correct_account="Expenses:Transport",
+                         hint=["transport"]),
 
             # Most transactions from Assets:Bank:Checking go to Expenses:Bills
-            ("Assets:Bank:Checking", "Company A", "Service", "Expenses:Bills"),
-            ("Assets:Bank:Checking", "Company B", "Service", "Expenses:Bills"),
-            ("Assets:Bank:Checking", "Company C", "Service", "Expenses:Bills"),
-            ("Assets:Bank:Checking", "Company D", "Service", "Expenses:Food"),
+            TrainingData(belonging_account="Assets:Bank:Checking",
+                         transaction_narration="Company A",
+                         posting_narration="Service",
+                         correct_account="Expenses:Bills",
+                         hint=["bills"]),
+            TrainingData(belonging_account="Assets:Bank:Checking",
+                         transaction_narration="Company B",
+                         posting_narration="Service",
+                         correct_account="Expenses:Bills",
+                         hint=["bills"]),
+            TrainingData(belonging_account="Assets:Bank:Checking",
+                         transaction_narration="Company C",
+                         posting_narration="Service",
+                         correct_account="Expenses:Bills",
+                         hint=["bills"]),
+            TrainingData(belonging_account="Assets:Bank:Checking",
+                         transaction_narration="Company D",
+                         posting_narration="Service",
+                         correct_account="Expenses:Food",
+                         hint=["food"]),
         ]
 
         self.predictor.train(pattern_data)
 
         # Test prediction with ambiguous narration but different belonging accounts
         wallet_account, wallet_conf = self.predictor.predict(
-            "Assets:Cash:Wallet", "Payment", "Monthly")
+            "Assets:Cash:Wallet", "Payment", "Monthly", ["payment"])
 
         bank_account, bank_conf = self.predictor.predict(
-            "Assets:Bank:Checking", "Payment", "Monthly")
+            "Assets:Bank:Checking", "Payment", "Monthly", ["payment"])
 
         # Should predict different accounts based on the belonging account pattern
         self.assertEqual(wallet_account, "Expenses:Food")

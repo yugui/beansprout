@@ -15,10 +15,18 @@ The importer successfully:
 Usage:
     ```python
     from importers.moneyforward import Importer as MoneyForwardImporter
+    from importers.account_predictor import AccountPredictor
+    
+    # Create an account predictor
+    predictor = AccountPredictor(
+        default_account="Expenses:Uncategorized",
+        min_confidence=0.6,
+    )
     
     # Create an importer instance
     importer = MoneyForwardImporter(
         wallet_account="Assets:Cash:Wallet",
+        account_predictor=predictor,
         expense_accounts={
             "食費": "Expenses:Food",
             "食費:昼ご飯": "Expenses:Food:Lunch",
@@ -52,6 +60,8 @@ from typing import Any, Dict, List, Optional, Pattern, Union
 from beancount.core import data
 from beangulp import mimetypes
 from beangulp.importers import csvbase
+
+from importers.account_predictor import AccountPredictor
 
 
 class Importer(csvbase.Importer):
@@ -89,6 +99,7 @@ class Importer(csvbase.Importer):
     def __init__(
         self,
         wallet_account: str,
+        account_predictor: AccountPredictor,
         expense_accounts: Optional[Dict[str, str]] = None,
         income_accounts: Optional[Dict[str, str]] = None,
         default_expense_account: str = "Expenses:Uncategorized",
@@ -100,6 +111,8 @@ class Importer(csvbase.Importer):
 
         Args:
             wallet_account: The Beancount account for the wallet.
+            account_predictor: An AccountPredictor instance to use for
+                predicting destination accounts for transfer transactions.
             expense_accounts: A dictionary mapping MoneyForward ME categories to
                 Beancount expense accounts.
             income_accounts: A dictionary mapping MoneyForward ME categories to
@@ -111,11 +124,13 @@ class Importer(csvbase.Importer):
                 CSV files.
         """
         super().__init__(wallet_account, currency)
+        self.account_predictor = account_predictor
         self.expense_accounts = expense_accounts or {}
         self.income_accounts = income_accounts or {}
         self.default_expense_account = default_expense_account
         self.default_income_account = default_income_account
         self.file_pattern = file_pattern
+        self.wallet_account = wallet_account
 
     def identify(self, filepath: str) -> bool:
         """Identify if the file is a MoneyForward ME CSV file.
@@ -300,19 +315,32 @@ class Importer(csvbase.Importer):
                                             notes: str) -> Optional[str]:
         """Guess the destination account for a transfer transaction.
         
-        This method attempts to determine the destination account for a transfer
-        transaction based on the category, subcategory, memo, and notes.
+        This method uses the AccountPredictor to determine the destination account
+        for a transfer transaction based on the category, subcategory, memo, and notes.
         
         Args:
             category: The MoneyForward ME category.
             subcategory: The MoneyForward ME subcategory.
-            memo: The memo field from the transaction.
-            notes: Additional notes from the transaction.
+            memo: The memo field from the transaction (transaction narration).
+            notes: Additional notes from the transaction (posting narration).
             
         Returns:
             The destination account name if it can be determined, None otherwise.
         """
-        # Initial implementation returns None
-        # This can be extended in the future to guess the destination account
-        # based on patterns in the category, subcategory, memo, and notes
-        return None
+        # Create hint from category and subcategory
+        hint = []
+        if category:
+            hint.append(category)
+        if subcategory:
+            hint.append(subcategory)
+
+        # Use the account predictor to predict the destination account
+        predicted_account, confidence = self.account_predictor.predict(
+            belonging_account=self.wallet_account,
+            transaction_narration=memo,
+            posting_narration=notes,
+            hint=hint)
+
+        # Return the predicted account if the confidence is high enough
+        # (The min_confidence threshold is already set in the AccountPredictor)
+        return predicted_account
