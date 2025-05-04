@@ -1,0 +1,21 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@beancount_deps//:requirements.bzl", "requirement")
+
+py_library(
+    name = "importers",
+    srcs = glob(["*.py"], exclude=["*_test.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "moneyforward_test",
+    srcs = ["moneyforward_test.py"],
+    deps = [
+        ":importers",
+        requirement("beancount"),
+    ],
+)

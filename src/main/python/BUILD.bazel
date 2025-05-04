@@ -13,6 +13,7 @@ py_binary(
     main = "bean_gulp.py",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/main/python/importers",
         "@beancount_deps//beancount",
         "@beancount_deps//beangulp",
     ],
