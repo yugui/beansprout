@@ -7,6 +7,17 @@ BEANCOUNT_DEPS = [
     requirement("beangulp"),
 ]
 
+py_binary(
+    name = "bean-gulp",
+    srcs = ["bean_gulp.py"],
+    main = "bean_gulp.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beancount_deps//beancount",
+        "@beancount_deps//beangulp",
+    ],
+)
+
 # bean-check command
 py_binary(
     name = "bean-check",
