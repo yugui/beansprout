@@ -26,7 +26,7 @@ class TestMoneyForwardImporter(cmptest.TestCase):
 
         # Sample data in Shift_JIS encoding
         csv_content = (
-            '"","","","","","","","","","ID"\n'
+            '"計算対象","日付","内容","金額（円）","保有金融機関","大項目","中項目","メモ","振替","ID"\n'
             '"1","2025/01/15","東京スーパー","-2500","財布","食費","食料品","週末の買い物","0","abcdef123456"\n'
             '"1","2025/01/20","渋谷カフェ","-800","財布","食費","昼ご飯","同僚とランチ","0","abcdef789012"\n'
             '"1","2025/01/25","クリニック","-1200","財布","健康・医療","医療費","定期検診","0","ghijkl123456"\n'
@@ -42,6 +42,7 @@ class TestMoneyForwardImporter(cmptest.TestCase):
         # Create an importer instance
         self.importer = moneyforward.Importer(
             wallet_account="Assets:Cash:Wallet",
+            expected_institution="財布",
             account_predictor=self.account_predictor,
             expense_accounts={
                 "食費": "Expenses:Food",

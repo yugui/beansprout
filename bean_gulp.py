@@ -57,16 +57,33 @@ def main():
         )
         account_predictor = AccountPredictor(min_confidence=0.6)
 
-    # Define importers
-    importers = [
-        # MoneyForward ME importer
-        # Configure with your wallet account and mappings loaded from TSV files
-        MoneyForwardImporter(
-            wallet_account="Assets:Cash:Wallet",
+    # Define a function to create a MoneyForward importer
+    def create_mf_importer(wallet_account: str, expected_institution: str) -> MoneyForwardImporter:
+        """Create a MoneyForward ME importer with the specified parameters.
+        
+        Args:
+            wallet_account: The Beancount account for the wallet.
+            expected_institution: The expected financial institution name in MoneyForward ME.
+            
+        Returns:
+            A configured MoneyForwardImporter instance.
+        """
+        return MoneyForwardImporter(
+            wallet_account=wallet_account,
+            expected_institution=expected_institution,
             account_predictor=account_predictor,
             expense_accounts=expense_accounts,
             income_accounts=income_accounts,
             currency="JPY",
+        )
+    
+    # Define importers
+    importers = [
+        # MoneyForward ME importer
+        # Configure with your wallet account and mappings loaded from TSV files
+        create_mf_importer(
+            wallet_account="Assets:Cash:Wallet",
+            expected_institution="財布",
         ),
     ]
 

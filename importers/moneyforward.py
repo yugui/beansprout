@@ -52,6 +52,7 @@ The importer can be used with the `bean-gulp` command:
     ```
 """
 
+import csv
 import datetime
 import re
 from os import path
@@ -99,6 +100,7 @@ class Importer(csvbase.Importer):
     def __init__(
         self,
         wallet_account: str,
+        expected_institution: str,
         account_predictor: AccountPredictor,
         expense_accounts: Optional[Dict[str, str]] = None,
         income_accounts: Optional[Dict[str, str]] = None,
@@ -111,6 +113,8 @@ class Importer(csvbase.Importer):
 
         Args:
             wallet_account: The Beancount account for the wallet.
+            expected_institution: The expected financial institution name in MoneyForward ME.
+                All records in the "保有金融機関" column must match this value.
             account_predictor: An AccountPredictor instance to use for
                 predicting destination accounts for transfer transactions.
             expense_accounts: A dictionary mapping MoneyForward ME categories to
@@ -131,6 +135,7 @@ class Importer(csvbase.Importer):
         self.default_income_account = default_income_account
         self.file_pattern = file_pattern
         self.wallet_account = wallet_account
+        self.expected_institution = expected_institution
 
     def identify(self, filepath: str) -> bool:
         """Identify if the file is a MoneyForward ME CSV file.
@@ -150,12 +155,29 @@ class Importer(csvbase.Importer):
         if mimetype != 'text/csv':
             return False
 
-        # Try to read the first few lines to confirm it's a MoneyForward ME CSV file
+        # Try to read the file to confirm it's a MoneyForward ME CSV file
         try:
             with open(filepath, 'r', encoding=self.encoding) as f:
-                header = f.readline()
-                if 'ID' not in header:
+                # Check header row
+                header = f.readline().strip()
+                expected_headers = r'"計算対象","日付","内容","金額（円）","保有金融機関","大項目","中項目","メモ","振替","ID"'
+                if header != expected_headers:
                     return False
+                
+                # Check that all records in the "保有金融機関" column match the expected institution
+                csv_reader = csv.reader(f)
+                for row in csv_reader:
+                    if not row:  # Skip empty rows
+                        continue
+                    
+                    if len(row) < 5:  # Ensure we have enough columns
+                        continue
+                    
+                    # Check the "保有金融機関" column (index 4)
+                    institution = row[4]
+                    if institution != self.expected_institution:
+                        return False
+                
                 return True
         except (UnicodeDecodeError, IOError):
             return False
