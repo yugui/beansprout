@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "expense_accounts.tsv",
+    "income_accounts.tsv",
+])

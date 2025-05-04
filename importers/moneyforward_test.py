@@ -10,7 +10,7 @@ from unittest import mock
 from beancount.core import data
 from beancount.parser import cmptest
 
-from src.main.python.importers import moneyforward
+from importers import moneyforward
 
 
 class TestMoneyForwardImporter(cmptest.TestCase):
@@ -127,7 +127,7 @@ class TestMoneyForwardImporter(cmptest.TestCase):
         self.assertEqual(1200, entry3.postings[1].units.number)
         self.assertEqual('JPY', entry3.postings[1].units.currency)
 
-        # Fourth entry (income)
+        # Fourth entry (income/transfer)
         entry4 = entries[3]
         self.assertEqual(datetime.date(2025, 1, 30), entry4.date)
         self.assertEqual('!', entry4.flag)
@@ -137,13 +137,10 @@ class TestMoneyForwardImporter(cmptest.TestCase):
         self.assertEqual('給与', entry4.meta['subcategory'])
         self.assertEqual('1月分', entry4.meta['memo'])
         self.assertEqual('mnopqr123456', entry4.meta['id'])
-        self.assertEqual(2, len(entry4.postings))
+        self.assertEqual(1, len(entry4.postings))  # Only one posting for transfer transactions
         self.assertEqual('Assets:Cash:Wallet', entry4.postings[0].account)
         self.assertEqual(250000, entry4.postings[0].units.number)
         self.assertEqual('JPY', entry4.postings[0].units.currency)
-        self.assertEqual('Income:Salary', entry4.postings[1].account)
-        self.assertEqual(250000, entry4.postings[1].units.number)
-        self.assertEqual('JPY', entry4.postings[1].units.currency)
 
     def test_file_date(self):
         """Test the file_date method."""

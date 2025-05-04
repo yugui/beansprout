@@ -25,9 +25,8 @@ The custom packages and commands in this repository are built with Bazel.
 
 # Source Structure
 * `third_party/` -- any third-party library dependencies
-* `src/main/python` -- root directory for the custom python packages
-* `src/main/python/importers` -- custom importer libraries
-* `src/main/python/sources` -- custom price quoters
+* `importers/` -- custom importer libraries
+* `sources/` -- custom price quoters
 
 ## Coding Principles
 

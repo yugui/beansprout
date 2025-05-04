@@ -2,13 +2,14 @@
 
 import os
 import beangulp
-from src.main.python.importers.moneyforward import Importer as MoneyForwardImporter
+from importers.moneyforward import Importer as MoneyForwardImporter
 
 # Define static file paths for account mappings
-EXPENSE_ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__),
-                                     "data/expense_accounts.tsv")
-INCOME_ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__),
-                                    "data/income_accounts.tsv")
+# Use absolute paths to ensure files are found regardless of working directory
+EXPENSE_ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "data", "expense_accounts.tsv")
+INCOME_ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "data", "income_accounts.tsv")
 
 
 def load_account_mappings(file_path):

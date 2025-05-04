@@ -39,8 +39,8 @@ Usage:
 
 The importer can be used with the `bean-gulp` command:
     ```bash
-    bazel run //src/main/python:bean-gulp -- identify /path/to/wallet-YYYYMM.csv
-    bazel run //src/main/python:bean-gulp -- extract /path/to/wallet-YYYYMM.csv
+    bazel run //:bean-gulp -- identify /path/to/wallet-YYYYMM.csv
+    bazel run //:bean-gulp -- extract /path/to/wallet-YYYYMM.csv
     ```
 """
 
