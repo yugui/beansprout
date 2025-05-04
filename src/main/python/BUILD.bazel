@@ -10,6 +10,10 @@ BEANCOUNT_DEPS = [
 py_binary(
     name = "bean-gulp",
     srcs = ["bean_gulp.py"],
+    data = [
+        "data/expense_accounts.tsv",
+        "data/income_accounts.tsv",
+    ],
     main = "bean_gulp.py",
     visibility = ["//visibility:public"],
     deps = [
