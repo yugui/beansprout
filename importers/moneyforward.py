@@ -266,19 +266,11 @@ class Importer(csvbase.Importer):
                 # Leave the transaction unbalanced if we can't determine the destination account
                 pass
         else:
-            # Regular income/expense transaction
-            if amount_value < 0:
-                # Expense transaction
-                account = self._get_expense_account(row.category,
-                                                    row.subcategory)
-                # Make the amount positive for the expense posting
-                units = data.Amount(-amount_value, posting.units.currency)
-            else:
-                # Income transaction
-                account = self._get_income_account(row.category,
-                                                   row.subcategory)
-                # Keep the amount positive for the income posting
-                units = data.Amount(amount_value, posting.units.currency)
+            # Expense transaction
+            account = self._get_expense_account(row.category,
+                                                row.subcategory)
+            # Make the amount positive for the expense posting
+            units = data.Amount(-amount_value, posting.units.currency)
 
             # Create a new posting for the expense/income account
             new_posting = data.Posting(account, units, None, None, None, None)
