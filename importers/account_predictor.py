@@ -77,6 +77,7 @@ predictor = AccountPredictor.load("account_predictor.pickle")
 
 import collections
 import math
+import os
 import pickle
 import re
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Counter as CounterType
@@ -438,6 +439,11 @@ class AccountPredictor:
         Args:
             filepath: The path to save the model to.
         """
+        # Ensure the parent directory exists
+        parent_dir = os.path.dirname(filepath)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+            
         with open(filepath, 'wb') as f:
             pickle.dump(
                 {
