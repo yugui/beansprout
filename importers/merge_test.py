@@ -132,9 +132,10 @@ class TestProcessor(unittest.TestCase):
                       entries_by_account_month)
         self.assertEqual(
             len(entries_by_account_month[("Assets:Cash:Wallet", "202504")]), 1)
-        self.assertEqual(
-            entries_by_account_month[("Assets:Cash:Wallet", "202504")][0],
-            self.test_transaction)
+        entry, importer = entries_by_account_month[("Assets:Cash:Wallet",
+                                                    "202504")][0]
+        self.assertEqual(entry, self.test_transaction)
+        self.assertEqual(importer, self.mock_importer)
 
         # Check that entries_by_dest_file is empty (since no existing files)
         self.assertEqual(len(entries_by_dest_file), 0)
@@ -212,9 +213,10 @@ class TestProcessor(unittest.TestCase):
                       entries_by_account_month)
         self.assertEqual(
             len(entries_by_account_month[("Assets:Cash:Wallet", "202504")]), 1)
-        self.assertEqual(
-            entries_by_account_month[("Assets:Cash:Wallet", "202504")][0],
-            self.test_transaction)
+        entry, importer = entries_by_account_month[("Assets:Cash:Wallet",
+                                                    "202504")][0]
+        self.assertEqual(entry, self.test_transaction)
+        self.assertEqual(importer, self.mock_importer)
 
         # Check that entries_by_dest_file contains the existing file with the existing transaction
         self.assertIn(existing_file, entries_by_dest_file)
@@ -344,10 +346,12 @@ class TestProcessor(unittest.TestCase):
             len(entries_by_account_month[("Assets:Cash:Wallet", "202504")]), 2)
 
         # Check that one of the entries is marked as a duplicate
-        entries = entries_by_account_month[("Assets:Cash:Wallet", "202504")]
+        entry_importer_pairs = entries_by_account_month[("Assets:Cash:Wallet",
+                                                         "202504")]
         duplicate_entries = [
-            e for e in entries
-            if hasattr(e, 'meta') and e.meta and '__duplicate__' in e.meta
+            entry for entry, _ in entry_importer_pairs
+            if hasattr(entry, 'meta') and entry.meta
+            and '__duplicate__' in entry.meta
         ]
         self.assertEqual(len(duplicate_entries), 1)
 
