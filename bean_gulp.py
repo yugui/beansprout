@@ -5,9 +5,12 @@ import click
 import datetime
 import glob
 import beangulp
+import sys
 from beancount import loader
+from beancount.parser import printer
 from importers.moneyforward import Importer as MoneyForwardImporter
 from importers.account_predictor import AccountPredictor
+from importers.merge import Processor
 
 # Define static file paths for account mappings
 # Use absolute paths to ensure files are found regardless of working directory
@@ -40,6 +43,136 @@ def load_account_mappings(file_path):
     except FileNotFoundError:
         print(f"Warning: Account mapping file not found: {file_path}")
     return mappings
+
+
+class FileWriter(Processor):
+    """Concrete implementation of Processor that writes entries to files.
+    
+    This class implements the process_output method to write entries to files
+    in the destination directory, organized by account and year-month.
+    
+    Attributes:
+        dry_run: Whether to perform a dry run without writing files.
+    """
+    
+    def __init__(self,
+                 importers,
+                 destination=None,
+                 reverse=False,
+                 failfast=False,
+                 quiet=0,
+                 dry_run=False):
+        """Initialize the FileWriter.
+        
+        Args:
+            importers: List of importers to use for extracting transactions.
+            destination: The destination directory for extracted transactions.
+            reverse: Whether to sort entries in reverse order.
+            failfast: Whether to stop processing at the first error.
+            quiet: Level of output suppression (0 for normal output, higher for less output).
+            dry_run: Whether to perform a dry run without writing files.
+        """
+        super().__init__(importers, destination, reverse, failfast, quiet)
+        self.dry_run = dry_run
+    
+    def is_duplicate(self, entry):
+        """Check if an entry is marked as a duplicate.
+        
+        Args:
+            entry: The entry to check.
+            
+        Returns:
+            True if the entry is marked as a duplicate, False otherwise.
+        """
+        return (hasattr(entry, 'meta') and entry.meta is not None
+                and '__duplicate__' in entry.meta)
+    
+    def process_output(self, entries_by_account_month, entries_by_dest_file):
+        """Process the output for the extracted and deduplicated entries.
+        
+        This method writes entries to files in the destination directory,
+        organized by account and year-month. It handles duplicate entries
+        according to the following rules:
+        1. Skip entries that are duplicates with entries in the destination file.
+        2. Comment out entries that are duplicates with entries from other files.
+        
+        Args:
+            entries_by_account_month: Dictionary mapping (account, year_month) tuples to lists of entries
+            entries_by_dest_file: Dictionary mapping destination file paths to lists of existing entries
+        """
+        for (account, year_month), entries in sorted(entries_by_account_month.items()):
+            # Create the destination path
+            account_path = account.replace(':', os.sep)
+            dest_dir = os.path.join(self.destination, account_path)
+            dest_file = os.path.join(dest_dir, f"{year_month}.beancount")
+            
+            # Check if the destination file already exists and has entries
+            existing_entries_in_dest = entries_by_dest_file.get(dest_file, [])
+            
+            # Process entries - filter out duplicates with existing_entries_in_dest
+            # and mark other duplicates for commenting
+            processed_entries = []
+            regular_count = 0
+            commented_count = 0
+            skipped_count = 0
+            
+            for entry in entries:
+                if self.is_duplicate(entry):
+                    # Get the duplicate entry that this entry duplicates
+                    duplicate_entry = entry.meta['__duplicate__']
+                    
+                    # Check if the duplicate entry is in existing_entries_in_dest
+                    is_duplicate_with_dest = duplicate_entry in existing_entries_in_dest
+                    
+                    if is_duplicate_with_dest:
+                        # Skip this entry as it's a duplicate with an entry in the destination file
+                        skipped_count += 1
+                        continue
+                    else:
+                        # Mark the duplicate entry for commenting out
+                        processed_entries.append((duplicate_entry, True))  # (entry, should_comment)
+                        commented_count += 1
+                else:
+                    # Regular entry
+                    processed_entries.append((entry, False))  # (entry, should_comment)
+                    regular_count += 1
+            
+            # Combine with existing entries from the destination file
+            for entry in existing_entries_in_dest:
+                processed_entries.append((entry, False))  # (entry, should_comment)
+            
+            # Sort all entries by date
+            processed_entries.sort(key=lambda x: x[0].date, reverse=self.reverse)
+            
+            # Print information
+            self.log(f"Writing entries ({regular_count} new, {commented_count} duplicates commented, {skipped_count} duplicates skipped) for {account} {year_month} to {dest_file}")
+            
+            if self.dry_run:
+                # In dry-run mode, print new transactions to stdout if not quiet
+                if self.quiet <= 0 and regular_count > 0:
+                    click.echo(
+                        f"\nNew transactions that would be written to {dest_file}:"
+                    )
+                    for entry, should_comment in processed_entries:
+                        if not should_comment and entry not in existing_entries_in_dest:
+                            string = printer.format_entry(entry)
+                            click.echo(string)
+            else:
+                # Create directory if it doesn't exist
+                os.makedirs(dest_dir, exist_ok=True)
+                
+                # Write entries to file
+                with open(dest_file, 'w') as output:
+                    output.write(beangulp.extract.HEADER + '\n')
+                    output.write(f"; Transactions for {account} {year_month}\n\n")
+                    
+                    for entry, should_comment in processed_entries:
+                        string = printer.format_entry(entry)
+                        if should_comment:
+                            # Comment out each line of the entry
+                            string = '; ' + string.replace('\n', '\n; ')
+                        output.write(string)
+                        output.write('\n')
 
 
 @click.command('merge')
@@ -80,181 +213,22 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
     Existing transactions are read from all beancount files under the destination
     directory whose base name matches the year-month of the extracted transactions.
     """
-    import sys
-    from beancount.parser import printer
-
-    # If the output directory is not specified, use the current working directory
-    if destination is None:
-        destination = os.getcwd()
-
-    verbosity = -quiet
-    log = beangulp.utils.logger(verbosity, err=True)
-    errors = beangulp.exceptions.ExceptionsTrap(log)
-
-    # Phase 1: Walk the source files and extract transactions
-    extracted = []  # List of (filename, entries, account, importer) tuples
-    year_months = set()  # Set of distinct year-months
-
-    for filename in beangulp.utils.walk(src):
-        with errors:
-            log(f'* {filename:}', nl=False)
-            if os.path.getsize(
-                    filename) > beangulp.identify.FILE_TOO_LARGE_THRESHOLD:
-                log(' ... SKIP')
-                continue
-
-            importer = beangulp.identify.identify(ctx.importers, filename)
-            if not importer:
-                log('')  # Newline.
-                continue
-
-            # Signal processing of this document.
-            log(' ...', nl=False)
-
-            # Get the account for this file
-            account = importer.account(filename)
-
-            # Extract entries from the file (without deduplication yet)
-            entries = beangulp.extract.extract_from_file(
-                importer, filename, [])
-
-            if not entries:
-                log(' (no entries)')
-                continue
-
-            # Collect year-months from entries
-            for entry in entries:
-                year_months.add(entry.date.strftime("%Y%m"))
-
-            # Store the extracted entries
-            extracted.append((filename, entries, account, importer))
-            log(' OK', fg='green')
-
-        if failfast and errors:
-            break
-
-    # If there are any errors, stop here
-    if errors:
-        log('# Errors detected: transactions will not be written.')
-        sys.exit(1)
-
-    # Phase 2: Sort the extracted entries
-    beangulp.extract.sort_extracted_entries(extracted)
-
-    # Phase 3: Read existing transactions for each year-month
-    existing_entries_by_year_month = {}
-    # Also track entries by destination file path for merging later
-    entries_by_dest_file = {}
-
-    for year_month in sorted(year_months):
-        # Find all beancount files with matching year-month in the destination directory
-        existing_entries = []
-
-        for root, _, files in os.walk(destination):
-            for file in files:
-                if file.endswith(".beancount") and file.startswith(year_month):
-                    existing_file = os.path.join(root, file)
-                    try:
-                        entries, _, _ = loader.load_file(existing_file)
-
-                        # Store entries by file path for merging later
-                        # We'll use these entries if the file path matches our destination file
-                        entries_by_dest_file[existing_file] = entries
-
-                        # Add to the collection of all existing entries for deduplication
-                        existing_entries.extend(entries)
-                        log(f"Loaded {len(entries)} existing entries from {existing_file}"
-                            )
-                    except Exception as e:
-                        log(f'Warning: Could not load {existing_file}: {e}')
-
-        existing_entries_by_year_month[year_month] = existing_entries
-
-    # Phase 4: Deduplicate extracted entries against existing entries
-    for filename, entries, account, importer in extracted:
-        # Group entries by year-month
-        entries_by_year_month = {}
-        for entry in entries:
-            year_month = entry.date.strftime("%Y%m")
-            if year_month not in entries_by_year_month:
-                entries_by_year_month[year_month] = []
-            entries_by_year_month[year_month].append(entry)
-
-        # Deduplicate entries for each year-month
-        for year_month, month_entries in entries_by_year_month.items():
-            existing = existing_entries_by_year_month.get(year_month, [])
-            # Mark duplicate entries
-            importer.deduplicate(month_entries, existing)
-
-            # Remove entries that have been marked as duplicates
-            # Entries are marked as duplicates by setting the '__duplicate__' metadata
-            month_entries[:] = [
-                entry for entry in month_entries
-                if not (hasattr(entry, 'meta') and entry.meta is not None
-                        and '__duplicate__' in entry.meta)
-            ]
-
-    # Phase 5 & 6: Group entries by account and year-month, then write to files
-    # First, group all extracted entries by account and year-month
-    entries_by_account_month = {}
-
-    for filename, entries, account, importer in extracted:
-        for entry in entries:
-            # Skip entries that have been marked as duplicates
-            if hasattr(
-                    entry, 'meta'
-            ) and entry.meta is not None and '__duplicate__' in entry.meta:
-                continue
-
-            year_month = entry.date.strftime("%Y%m")
-            key = (account, year_month)
-            if key not in entries_by_account_month:
-                entries_by_account_month[key] = []
-            entries_by_account_month[key].append(entry)
-
-    # Now process each account and year-month combination
-    for (account,
-         year_month), new_entries in sorted(entries_by_account_month.items()):
-        # Create the destination path
-        account_path = account.replace(':', os.sep)
-        dest_dir = os.path.join(destination, account_path)
-        dest_file = os.path.join(dest_dir, f"{year_month}.beancount")
-
-        # Check if the destination file already exists and has entries
-        existing_entries_in_dest = entries_by_dest_file.get(dest_file, [])
-
-        # Combine new entries with existing entries from the destination file
-        combined_entries = existing_entries_in_dest + new_entries
-
-        # Sort all entries
-        combined_entries.sort(key=lambda e: e.date, reverse=reverse)
-
-        # Print information
-        log(f"Writing {len(combined_entries)} entries ({len(new_entries)} new) for {account} {year_month} to {dest_file}"
-            )
-
-        if dry_run:
-            # In dry-run mode, print new transactions to stdout if not quiet
-            if quiet <= 0 and new_entries:
-                click.echo(
-                    f"\nNew transactions that would be written to {dest_file}:"
-                )
-                for entry in new_entries:
-                    string = printer.format_entry(entry)
-                    click.echo(string)
-        else:
-            # Create directory if it doesn't exist
-            os.makedirs(dest_dir, exist_ok=True)
-
-            # Write entries to file
-            with open(dest_file, 'w') as output:
-                output.write(beangulp.extract.HEADER + '\n')
-                output.write(f"; Transactions for {account} {year_month}\n\n")
-
-                for entry in combined_entries:
-                    string = printer.format_entry(entry)
-                    output.write(string)
-                    output.write('\n')
+    # Create a FileWriter instance
+    processor = FileWriter(
+        importers=ctx.importers,
+        destination=destination,
+        reverse=reverse,
+        failfast=failfast,
+        quiet=quiet,
+        dry_run=dry_run
+    )
+    
+    # Process the source files
+    status = processor.process(src)
+    
+    # Exit with the appropriate status code
+    if status != 0:
+        sys.exit(status)
 
 
 class ExtendedIngest(beangulp.Ingest):

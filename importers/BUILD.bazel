@@ -6,6 +6,26 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":moneyforward",
+        ":merge",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "merge",
+    srcs = ["merge.py"],
+    deps = [
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "merge_test",
+    srcs = ["merge_test.py"],
+    deps = [
+        ":merge",
         requirement("beancount"),
         requirement("beangulp"),
     ],
