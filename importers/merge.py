@@ -8,13 +8,19 @@ process while allowing customization of the final output phase.
 import os
 import abc
 import sys
-from typing import Dict, List, Set, Tuple, Optional, Any
+from typing import Dict, List, Set, Tuple, Optional, TypeVar, Generic
 
 import beangulp
 from beancount import loader
+from beancount.core import data
+from beancount.core.data import Directive, Entries
 
 
-class Processor(abc.ABC):
+# Type for importers
+ImporterType = TypeVar('ImporterType', bound=beangulp.Importer)
+
+
+class Processor(abc.ABC, Generic[ImporterType]):
     """Abstract base class for processing and merging extracted transactions.
     
     This class implements the core logic of the merge process (phases 1-5) from
@@ -31,7 +37,7 @@ class Processor(abc.ABC):
     """
 
     def __init__(self,
-                 importers: List[Any],
+                 importers: List[ImporterType],
                  destination: Optional[str] = None,
                  reverse: bool = False,
                  failfast: bool = False,
@@ -99,7 +105,7 @@ class Processor(abc.ABC):
 
     def _extract_transactions(
         self, src: List[str]
-    ) -> Tuple[List[Tuple[str, List[Any], str, Any]], Set[str]]:
+    ) -> Tuple[List[Tuple[str, Entries, str, ImporterType]], Set[str]]:
         """Walk the source files and extract transactions.
         
         Args:
@@ -155,7 +161,7 @@ class Processor(abc.ABC):
 
     def _read_existing_transactions(
         self, year_months: Set[str]
-    ) -> Tuple[Dict[str, List[Any]], Dict[str, List[Any]]]:
+    ) -> Tuple[Dict[str, Entries], Dict[str, Entries]]:
         """Read existing transactions for each year-month.
         
         Args:
@@ -166,13 +172,13 @@ class Processor(abc.ABC):
             - A dictionary mapping year-months to lists of existing entries
             - A dictionary mapping destination file paths to lists of existing entries
         """
-        existing_entries_by_year_month = {}
+        existing_entries_by_year_month: Dict[str, Entries] = {}
         # Also track entries by destination file path for merging later
-        entries_by_dest_file = {}
+        entries_by_dest_file: Dict[str, Entries] = {}
 
         for year_month in sorted(year_months):
             # Find all beancount files with matching year-month in the destination directory
-            existing_entries = []
+            existing_entries: Entries = []
 
             for root, _, files in os.walk(self.destination):
                 for file in files:
@@ -201,8 +207,8 @@ class Processor(abc.ABC):
         return existing_entries_by_year_month, entries_by_dest_file
 
     def _deduplicate_entries(
-            self, extracted: List[Tuple[str, List[Any], str, Any]],
-            existing_entries_by_year_month: Dict[str, List[Any]]) -> None:
+            self, extracted: List[Tuple[str, Entries, str, ImporterType]],
+            existing_entries_by_year_month: Dict[str, Entries]) -> None:
         """Deduplicate extracted entries against existing entries.
         
         Args:
@@ -211,7 +217,7 @@ class Processor(abc.ABC):
         """
         for filename, entries, account, importer in extracted:
             # Group entries by year-month
-            entries_by_year_month = {}
+            entries_by_year_month: Dict[str, Entries] = {}
             for entry in entries:
                 year_month = entry.date.strftime("%Y%m")
                 if year_month not in entries_by_year_month:
@@ -229,8 +235,8 @@ class Processor(abc.ABC):
                 # but we don't remove them here
 
     def _group_entries_by_account_month(
-        self, extracted: List[Tuple[str, List[Any], str, Any]]
-    ) -> Dict[Tuple[str, str], List[Any]]:
+        self, extracted: List[Tuple[str, Entries, str, ImporterType]]
+    ) -> Dict[Tuple[str, str], Entries]:
         """Group entries by account and year-month.
         
         Args:
@@ -239,7 +245,7 @@ class Processor(abc.ABC):
         Returns:
             A dictionary mapping (account, year_month) tuples to lists of entries
         """
-        entries_by_account_month = {}
+        entries_by_account_month: Dict[Tuple[str, str], Entries] = {}
 
         for filename, entries, account, importer in extracted:
             for entry in entries:
@@ -254,8 +260,8 @@ class Processor(abc.ABC):
 
     @abc.abstractmethod
     def process_output(self, entries_by_account_month: Dict[Tuple[str, str],
-                                                            List[Any]],
-                       entries_by_dest_file: Dict[str, List[Any]]) -> None:
+                                                            Entries],
+                       entries_by_dest_file: Dict[str, Entries]) -> None:
         """Process the output for the extracted and deduplicated entries.
         
         This abstract method must be implemented by subclasses to define how
