@@ -1,5 +1,6 @@
 load("@beancount_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
 py_binary(
     name = "bean-gulp",
@@ -26,5 +27,45 @@ py_binary(
     deps = [
         requirement("beancount"),
         requirement("beanprice"),
+    ],
+)
+
+# Package for top-level Python files
+py_package(
+    name = "beancount_pkg",
+    packages = [
+        "bean_gulp",
+        "bean_price",
+        "importers",
+        "quoters",
+    ],
+    deps = [
+        ":bean-gulp",
+        ":bean-price",
+    ],
+)
+
+# Package for importers directory
+py_package(
+    name = "importers_pkg",
+    packages = ["importers"],
+    deps = ["//importers"],
+)
+
+# Wheel packaging rule
+py_wheel(
+    name = "whl",
+    distribution = "beancount_tools",
+    entry_points = {
+        "console_scripts": [
+            "bean-gulp = bean_gulp:main",
+            "bean-price = bean_price:main",
+        ],
+    },
+    python_tag = "py3",
+    requires_file = "//third_party:requirements.in",
+    version = "0.1.0",
+    deps = [
+        ":beancount_pkg",
     ],
 )
