@@ -26,7 +26,7 @@ The custom packages and commands in this repository are built with Bazel.
 # Source Structure
 * `third_party/` -- any third-party library dependencies
 * `importers/` -- custom importer libraries
-* `sources/` -- custom price quoters
+* `quoters/` -- custom price quoters
 
 ## Coding Principles
 
@@ -46,7 +46,7 @@ design to achieve the goal, and finally implement it.
 Implementations should be tested with unit tests. Test files are along with the
 test target files in the same directory.
 
-You need to use Bazel to run thest tests.
+You must use Bazel for testing.
 
 ## Formatting
 The code should be formatted with the following formatters before you make git
@@ -73,8 +73,12 @@ consistently update `requirements_lock.txt`.
 You can make sure that the dependencies are locally available by running
 `bazel build @beancount_deps//...`. Then, you will have the dependency
 packages resolved and downloaded in the `bazel-beancount/external/` directory.
-You can refer the files under the directory to see the source of the packages
-like `beancount`, `beangulp`.
+The directory contains symlinks to the actual resolved package directories.
+Such symlinks are suffixed with `rules_python++` and contains the package
+name in the file names.
+
+You can refer the files under the individual linked directories to see the
+source of the packages like `beancount`, `beangulp`.
 
 # API References
 You can refer the following reference implementations and API references for

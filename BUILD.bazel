@@ -17,3 +17,14 @@ py_binary(
         "//importers",
     ],
 )
+
+py_binary(
+    name = "bean-price",
+    srcs = ["bean_price.py"],
+    main = "bean_price.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("beancount"),
+        requirement("beanprice"),
+    ],
+)
