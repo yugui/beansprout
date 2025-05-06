@@ -24,10 +24,10 @@ INCOME_ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 def load_account_mappings(file_path):
     """Load account mappings from a TSV file.
-    
+
     Args:
         file_path: Path to the TSV file containing account mappings.
-        
+
     Returns:
         A dictionary mapping categories to accounts.
     """
@@ -49,10 +49,10 @@ def load_account_mappings(file_path):
 
 class FileWriter(Processor):
     """Concrete implementation of Processor that writes entries to files.
-    
+
     This class implements the process_output method to write entries to files
     in the destination directory, organized by account and year-month.
-    
+
     Attributes:
         dry_run: Whether to perform a dry run without writing files.
     """
@@ -65,7 +65,7 @@ class FileWriter(Processor):
                  quiet=0,
                  dry_run=False):
         """Initialize the FileWriter.
-        
+
         Args:
             importers: List of importers to use for extracting transactions.
             destination: The destination directory for extracted transactions.
@@ -77,29 +77,23 @@ class FileWriter(Processor):
         super().__init__(importers, destination, reverse, failfast, quiet)
         self.dry_run = dry_run
 
-    def is_duplicate(self, entry):
-        """Check if an entry is marked as a duplicate.
-        
-        Args:
-            entry: The entry to check.
-            
-        Returns:
-            True if the entry is marked as a duplicate, False otherwise.
-        """
-        return (hasattr(entry, 'meta') and entry.meta is not None
-                and '__duplicate__' in entry.meta)
+    def get_duplicate(self, entry):
+        if hasattr(
+                entry, 'meta'
+        ) and entry.meta is not None and '__duplicate__' in entry.meta:
+            return entry.meta['__duplicate__']
 
     def process_output(self, entries_by_account_month: Dict[Tuple[
         str, str], List[Tuple[Directive, ImporterType]]],
                        entries_by_dest_file: Dict[str, Entries]) -> None:
         """Process the output for the extracted and deduplicated entries.
-        
+
         This method writes entries to files in the destination directory,
         organized by account and year-month. It handles duplicate entries
         according to the following rules:
         1. Skip entries that are duplicates with entries in the destination file.
         2. Comment out entries that are duplicates with entries from other files.
-        
+
         Args:
             entries_by_account_month: Dictionary mapping (account, year_month) tuples to 
                                      lists of (entry, importer) tuples
@@ -123,10 +117,8 @@ class FileWriter(Processor):
             skipped_count = 0
 
             for entry, importer in entry_importer_pairs:
-                if self.is_duplicate(entry):
-                    # Get the duplicate entry that this entry duplicates
-                    duplicate_entry = entry.meta['__duplicate__']
-
+                duplicate_entry = self.get_duplicate(entry)
+                if duplicate_entry:
                     # Check if the duplicate entry is in existing_entries_in_dest
                     is_duplicate_with_dest = duplicate_entry in existing_entries_in_dest
 
@@ -216,13 +208,13 @@ class FileWriter(Processor):
 @click.pass_obj
 def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
     """Extract transactions from documents and merge them with existing monthly files.
-    
+
     Walk the SRC list of files or directories and extract the ledger
     entries from each file identified by one of the configured
     importers. The entries are grouped by year and month and merged with
     existing entries in files named after the calendar year and month in the 
     archival subdirectory specified by the importer within the destination directory.
-    
+
     Existing transactions are read from all beancount files under the destination
     directory whose base name matches the year-month of the extracted transactions.
     """
@@ -244,11 +236,11 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
 
 class ModelTrainer(Processor):
     """Concrete implementation of Processor that trains the account predictor model.
-    
+
     This class implements the process_output method to detect prediction failures
     and update the account predictor model based on the correct accounts found
     in existing duplicate transactions.
-    
+
     Attributes:
         account_predictor: The account predictor model to train.
         account_predictor_path: The path to save the updated model.
@@ -265,7 +257,7 @@ class ModelTrainer(Processor):
                  quiet=0,
                  dry_run=False):
         """Initialize the ModelTrainer.
-        
+
         Args:
             importers: List of importers to use for extracting transactions.
             account_predictor: The account predictor model to train.
@@ -280,30 +272,23 @@ class ModelTrainer(Processor):
         self.account_predictor = account_predictor
         self.account_predictor_path = account_predictor_path
         self.dry_run = dry_run
-        self.training_count = 0
 
-    def is_duplicate(self, entry):
-        """Check if an entry is marked as a duplicate.
-        
-        Args:
-            entry: The entry to check.
-            
-        Returns:
-            True if the entry is marked as a duplicate, False otherwise.
-        """
-        return (hasattr(entry, 'meta') and entry.meta is not None
-                and '__duplicate__' in entry.meta)
+    def get_duplicate(self, entry):
+        if hasattr(
+                entry, 'meta'
+        ) and entry.meta is not None and '__duplicate__' in entry.meta:
+            return entry.meta['__duplicate__']
 
     def process_output(self, entries_by_account_month: Dict[Tuple[
         str, str], List[Tuple[Directive, ImporterType]]],
                        entries_by_dest_file: Dict[str, Entries]) -> None:
         """Process the output for the extracted entries and train the model.
-        
+
         This method detects prediction failures by comparing extracted transactions
         with their duplicate existing transactions. It then updates the prediction
         model using the account in the existing duplicate transactions for
         mismatching cases.
-        
+
         Args:
             entries_by_account_month: Dictionary mapping (account, year_month) tuples to 
                                      lists of (entry, importer) tuples
@@ -312,6 +297,7 @@ class ModelTrainer(Processor):
         total_entries = 0
         duplicate_entries = 0
         mismatch_entries = 0
+        training_count = 0
 
         # Process all extracted entries
         for (account, year_month), entry_importer_pairs in sorted(
@@ -319,82 +305,96 @@ class ModelTrainer(Processor):
             for entry, importer in entry_importer_pairs:
                 total_entries += 1
 
-                # Skip non-duplicate entries
-                if not self.is_duplicate(entry):
+                duplicate_entry = self.get_duplicate(entry)
+                if not duplicate_entry:
                     continue
-
                 duplicate_entries += 1
-                duplicate_entry = entry.meta['__duplicate__']
 
                 # Skip entries without postings
                 if not hasattr(entry, 'postings') or not hasattr(
                         duplicate_entry, 'postings'):
                     continue
 
-                # For each posting in the extracted entry
-                for posting in entry.postings:
-                    # Skip the posting if it's for the wallet account (belonging account)
-                    if posting.account == account:
-                        continue
-
-                    # Find the corresponding posting in the duplicate entry
-                    self._process_posting(account, entry, posting,
-                                          duplicate_entry)
+                (is_mismatch, trained) = self._process_duplicate_pair(
+                    account, entry, duplicate_entry, importer)
+                if is_mismatch:
+                    mismatch_entries += 1
+                if trained:
+                    training_count += 1
 
         # Save the updated model if not in dry-run mode and we have training examples
-        if not self.dry_run and self.training_count > 0:
+        if not self.dry_run and training_count > 0:
             self.account_predictor.save(self.account_predictor_path)
             self.log(
-                f"Updated account predictor model with {self.training_count} examples and saved to {self.account_predictor_path}"
+                f"Updated account predictor model with {training_count} examples and saved to {self.account_predictor_path}"
             )
 
         # Print summary
         self.log(
             f"Processed {total_entries} entries, found {duplicate_entries} duplicates, "
             +
-            f"detected {mismatch_entries} prediction mismatches, trained on {self.training_count} examples"
+            f"detected {mismatch_entries} prediction mismatches, trained on {training_count} examples"
         )
 
-    def _process_posting(self, account, entry, posting, duplicate_entry):
+    def _process_duplicate_pair(self, account, entry, duplicate_entry,
+                                importer) -> Tuple[bool, bool]:
         """Process a posting to detect prediction failures and update the model.
-        
+
         Args:
             account: The account the transaction belongs to.
             entry: The extracted entry.
-            posting: The posting to process.
             duplicate_entry: The duplicate entry from existing transactions.
+            importer: The importer that created the entry.
         """
-        # Find the corresponding posting in the duplicate entry
-        for dup_posting in duplicate_entry.postings:
-            # Skip if not matching by amount and currency
-            if (dup_posting.units.number != posting.units.number
-                    or dup_posting.units.currency != posting.units.currency
-                    or dup_posting.account == account):
-                continue
 
-            # Skip if the predicted account matches the actual account
-            if posting.account == dup_posting.account:
-                return
+        def _get_posting(entry, account):
+            if len(entry.postings) != 2:
+                return None
+            for posting in entry.postings:
+                if posting.account != account:
+                    return posting
+            return None
 
-            # Get transaction narration and posting narration
+        posting = _get_posting(entry, account)
+        duplicate_posting = _get_posting(duplicate_entry, account)
+        if not duplicate_posting:
+            return (False, False)
+        if posting and posting.account == duplicate_posting.account:
+            return (False, False)
+
+        # Get transaction narration, posting narration, and hint
+        transaction_narration = ""
+        posting_narration = ""
+        hint = []
+
+        # Check if the importer is a MoneyForwardImporter and has the extract_prediction_data method
+        if hasattr(importer, 'extract_prediction_data'):
+            # Use the extract_prediction_data method to get the data
+            transaction_narration, posting_narration, hint = importer.extract_prediction_data(
+                entry)
+        else:
+            # Fallback to the old way of extracting data
             transaction_narration = entry.narration if hasattr(
                 entry, 'narration') else ""
             posting_narration = posting.meta.get('narration', '') if hasattr(
                 posting, 'meta') and posting.meta else ""
 
-            # Update the model with the correct account
-            if not self.dry_run:
-                self.account_predictor.update(
-                    belonging_account=account,
-                    transaction_narration=transaction_narration,
-                    posting_narration=posting_narration,
-                    correct_account=dup_posting.account)
-                self.training_count += 1
+        self.log(
+            f"Training on mismatch: {transaction_narration} - " +
+            f"Predicted: {posting.account if posting else None}, Actual: {duplicate_posting.account}"
+        )
 
-            self.log(
-                f"Training on mismatch: {transaction_narration} - " +
-                f"Predicted: {posting.account}, Actual: {dup_posting.account}")
-            return
+        # Update the model with the correct account
+        if self.dry_run:
+            return (True, False)
+
+        self.account_predictor.update(
+            belonging_account=account,
+            transaction_narration=transaction_narration,
+            posting_narration=posting_narration,
+            hint=hint,
+            correct_account=duplicate_posting.account)
+        return (True, True)
 
 
 @click.command('train')
@@ -433,13 +433,13 @@ class ModelTrainer(Processor):
 def _train(ctx, src, destination, reverse, failfast, quiet, dry_run,
            model_path):
     """Train the account predictor model based on prediction failures.
-    
+
     Walk the SRC list of files or directories and extract the ledger
     entries from each file identified by one of the configured
     importers. Compare the extracted transactions with existing duplicate
     transactions to detect prediction failures. Update the account predictor
     model using the correct accounts from the existing transactions.
-    
+
     This command is useful for improving the accuracy of account predictions
     by learning from existing manually corrected transactions.
     """
@@ -484,7 +484,7 @@ class ExtendedIngest(beangulp.Ingest):
 
     def __init__(self, importers, hooks=None):
         """Initialize the ExtendedIngest class.
-        
+
         Args:
             importers: List of importers to use.
             hooks: Optional list of hooks to run after extraction.
@@ -522,11 +522,11 @@ def main():
     def create_mf_importer(wallet_account: str,
                            expected_institution: str) -> MoneyForwardImporter:
         """Create a MoneyForward ME importer with the specified parameters.
-        
+
         Args:
             wallet_account: The Beancount account for the wallet.
             expected_institution: The expected financial institution name in MoneyForward ME.
-            
+
         Returns:
             A configured MoneyForwardImporter instance.
         """

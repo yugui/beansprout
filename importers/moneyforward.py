@@ -56,7 +56,7 @@ import csv
 import datetime
 import re
 from os import path
-from typing import Any, Dict, List, Optional, Pattern, Union
+from typing import Any, Dict, List, Optional, Pattern, Tuple, Union
 
 from beancount.core import data
 from beangulp import mimetypes
@@ -324,6 +324,39 @@ class Importer(csvbase.Importer):
         # Return the default income account
         return self.default_income_account
 
+    def extract_prediction_data(self, directive: data.Directive) -> Tuple[str, str, List[str]]:
+        """Extract transaction_narration, posting_narration, and hint from a beancount Directive.
+        
+        This method extracts the data needed for account prediction from a beancount Directive.
+        It assumes that the Directive was created by this Importer.
+        
+        Args:
+            directive: A beancount Directive, typically a Transaction.
+            
+        Returns:
+            A tuple containing (transaction_narration, posting_narration, hint).
+            - transaction_narration: The memo field from the transaction.
+            - posting_narration: The narration field from the transaction.
+            - hint: A list of strings containing category and subcategory.
+        """
+        # Extract metadata from the directive
+        meta = directive.meta
+        
+        # Extract transaction_narration (memo)
+        transaction_narration = meta.get('memo', '')
+        
+        # Extract posting_narration (narration)
+        posting_narration = directive.narration if hasattr(directive, 'narration') else ''
+        
+        # Create hint from category and subcategory
+        hint = []
+        if 'category' in meta and meta['category']:
+            hint.append(meta['category'])
+        if 'subcategory' in meta and meta['subcategory']:
+            hint.append(meta['subcategory'])
+            
+        return transaction_narration, posting_narration, hint
+        
     def _guess_transfer_destination_account(self, category: str,
                                             subcategory: str, memo: str,
                                             notes: str) -> Optional[str]:

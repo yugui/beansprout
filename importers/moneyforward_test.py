@@ -155,6 +155,35 @@ class TestMoneyForwardImporter(cmptest.TestCase):
 
         self.assertEqual(datetime.date(2025, 1, 1), date)
 
+    def test_extract_prediction_data(self):
+        """Test the extract_prediction_data method."""
+        # Create a sample Transaction directive
+        meta = data.new_metadata('test_file.beancount', 1)
+        meta['category'] = '食費'
+        meta['subcategory'] = '昼ご飯'
+        meta['memo'] = 'メモ内容：同僚とランチ'
+        meta['id'] = 'abcdef789012'
+        
+        date = datetime.date(2025, 1, 20)
+        txn = data.Transaction(
+            meta=meta,
+            date=date,
+            flag='*',
+            payee='渋谷カフェ',
+            narration='ナレーション：カフェでの支出',
+            tags=set(),
+            links=set(),
+            postings=[],
+        )
+        
+        # Call the extract_prediction_data method
+        transaction_narration, posting_narration, hint = self.importer.extract_prediction_data(txn)
+        
+        # Verify the results
+        self.assertEqual('メモ内容：同僚とランチ', transaction_narration)
+        self.assertEqual('ナレーション：カフェでの支出', posting_narration)
+        self.assertEqual(['食費', '昼ご飯'], hint)
+
 
 if __name__ == '__main__':
     unittest.main()

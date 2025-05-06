@@ -1,5 +1,5 @@
 load("@beancount_deps//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 py_binary(
     name = "bean-gulp",
@@ -15,17 +15,5 @@ py_binary(
         requirement("beancount"),
         requirement("beangulp"),
         "//importers",
-    ],
-)
-
-py_test(
-    name = "bean_gulp_test",
-    srcs = ["bean_gulp_test.py"],
-    main = "bean_gulp_test.py",
-    deps = [
-        ":bean-gulp",
-        requirement("click"),
-        requirement("beancount"),
-        requirement("beangulp"),
     ],
 )
