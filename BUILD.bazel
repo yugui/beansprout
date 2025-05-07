@@ -38,18 +38,12 @@ py_package(
         "bean_price",
         "importers",
         "quoters",
+        "data",
     ],
     deps = [
         ":bean-gulp",
         ":bean-price",
     ],
-)
-
-# Package for importers directory
-py_package(
-    name = "importers_pkg",
-    packages = ["importers"],
-    deps = ["//importers"],
 )
 
 # Wheel packaging rule
