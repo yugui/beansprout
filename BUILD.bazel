@@ -30,12 +30,26 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "bean-quote",
+    srcs = ["bean_quote.py"],
+    main = "bean_quote.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("click"),
+        requirement("beancount"),
+        requirement("beanprice"),
+        "//quoters",
+    ],
+)
+
 # Package for top-level Python files
 py_package(
     name = "beancount_pkg",
     packages = [
         "bean_gulp",
         "bean_price",
+        "bean_quote",
         "importers",
         "quoters",
         "data",
@@ -43,6 +57,7 @@ py_package(
     deps = [
         ":bean-gulp",
         ":bean-price",
+        ":bean-quote",
     ],
 )
 
@@ -54,6 +69,7 @@ py_wheel(
         "console_scripts": [
             "bean-gulp = bean_gulp:main",
             "bean-price = bean_price:main",
+            "bean-quote = bean_quote:main",
         ],
     },
     python_tag = "py3",

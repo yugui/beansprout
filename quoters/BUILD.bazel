@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@beancount_deps//:requirements.bzl", "requirement")
+
+py_library(
+    name = "quoters",
+    srcs = [
+        "__init__.py",
+        "commodity_finder.py",
+        "example.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("beancount"),
+        requirement("beanprice"),
+        requirement("requests"),
+    ],
+)
+
+# Directory for storing test data files for quoters
+filegroup(
+    name = "testdata",
+    srcs = [
+        "testdata/test-commodities.beancount",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "commodity_finder_test",
+    srcs = ["commodity_finder_test.py"],
+    data = [":testdata"],
+    deps = [
+        ":quoters",
+        requirement("beancount"),
+    ],
+)

@@ -1,0 +1,26 @@
+2020-01-01 open Assets:Investments:Stocks
+2020-01-01 open Assets:Cash:Checking
+2020-01-01 open Expenses:Investments
+
+2020-01-01 commodity USD
+  name: "US Dollar"
+
+2020-01-01 commodity AAPL
+  name: "Apple Inc."
+  price: "USD:yahoo/AAPL"
+  
+2020-01-01 commodity MSFT
+  name: "Microsoft Corporation"
+  price: "USD:yahoo/MSFT"
+  
+2020-01-01 commodity GOOGL
+  name: "Alphabet Inc."
+  price: "USD:yahoo/GOOGL"
+  quote: "disabled"
+  
+2020-01-01 commodity BTC
+  name: "Bitcoin"
+  
+2020-01-02 * "Buy some stock"
+  Assets:Investments:Stocks    10 AAPL {125.00 USD}
+  Assets:Cash:Checking        -1250.00 USD
