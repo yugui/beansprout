@@ -12,7 +12,7 @@ from beancount.core.data import Commodity, Price
 from beancount.core.number import Decimal
 
 from quoters import commodity_finder
-from quoters import quote_fetcher
+from quoters.quote_fetcher import QuoteFetcher, PriceSource
 
 
 class TestQuoteFetcher(unittest.TestCase):
@@ -42,7 +42,7 @@ class TestQuoteFetcher(unittest.TestCase):
                                                              'USD')
         
         # Create a fetcher instance
-        self.fetcher = quote_fetcher.QuoteFetcher(custom_only=False)
+        self.fetcher = QuoteFetcher(custom_only=False)
         
         # Replace the fetcher's _get_source method to return our mock
         self.original_get_source = self.fetcher._get_source
@@ -53,6 +53,72 @@ class TestQuoteFetcher(unittest.TestCase):
         # Restore original _get_source method
         if hasattr(self, 'original_get_source'):
             self.fetcher._get_source = self.original_get_source
+
+    def test_get_price_sources(self) -> None:
+        """Test extracting price sources from commodity metadata."""
+        # Find the Apple commodity
+        apple = next(c for c in self.commodities if c.currency == "AAPL")
+
+        # Get its price sources
+        price_sources = self.fetcher._get_price_sources(commodity=apple)
+
+        # Check that we got the expected sources
+        self.assertEqual(len(price_sources), 1)
+        self.assertEqual(price_sources[0].currency, "USD")
+        self.assertEqual(price_sources[0].source, "mock_yahoo")
+        self.assertEqual(price_sources[0].ticker, "AAPL")
+        
+        # Test with a commodity that has multiple price sources
+        multi_source_commodity = data.Commodity(
+            meta={'filename': 'test', 'lineno': 1, 
+                 'price': 'USD:source1/TSLA JPY:source2/TSLA.T EUR:source3/TSLA.EU'},
+            date=datetime.date(2025, 5, 8),
+            currency='TSLA'
+        )
+        
+        price_sources = self.fetcher._get_price_sources(commodity=multi_source_commodity)
+        self.assertEqual(len(price_sources), 3)
+        
+        self.assertEqual(price_sources[0].currency, "USD")
+        self.assertEqual(price_sources[0].source, "source1")
+        self.assertEqual(price_sources[0].ticker, "TSLA")
+        
+        self.assertEqual(price_sources[1].currency, "JPY")
+        self.assertEqual(price_sources[1].source, "source2")
+        self.assertEqual(price_sources[1].ticker, "TSLA.T")
+        
+        self.assertEqual(price_sources[2].currency, "EUR")
+        self.assertEqual(price_sources[2].source, "source3")
+        self.assertEqual(price_sources[2].ticker, "TSLA.EU")
+        
+        # Test with fallback sources
+        fallback_commodity = data.Commodity(
+            meta={'filename': 'test', 'lineno': 1, 
+                 'price': 'USD:source1/BTC,source2/BTC'},
+            date=datetime.date(2025, 5, 8),
+            currency='BTC'
+        )
+        
+        price_sources = self.fetcher._get_price_sources(commodity=fallback_commodity)
+        self.assertEqual(len(price_sources), 2)
+        
+        self.assertEqual(price_sources[0].currency, "USD")
+        self.assertEqual(price_sources[0].source, "source1")
+        self.assertEqual(price_sources[0].ticker, "BTC")
+        
+        self.assertEqual(price_sources[1].currency, "USD")
+        self.assertEqual(price_sources[1].source, "source2")
+        self.assertEqual(price_sources[1].ticker, "BTC")
+        
+        # Test with a commodity that has no price metadata
+        no_price_commodity = data.Commodity(
+            meta={'filename': 'test', 'lineno': 1},
+            date=datetime.date(2025, 5, 8),
+            currency='BTC'
+        )
+        
+        price_sources = self.fetcher._get_price_sources(commodity=no_price_commodity)
+        self.assertEqual(price_sources, [])
 
     def test_fetch_latest_quote(self) -> None:
         """Test fetching the latest quote for a commodity."""
@@ -92,6 +158,64 @@ class TestQuoteFetcher(unittest.TestCase):
         self.assertEqual(price_entry.amount, Decimal('145.00'))
         self.assertEqual(price_entry.date, datetime.date(2025, 5, 1))
         self.assertEqual(price_entry.meta['source'], 'mock_yahoo/AAPL')
+
+    def test_fetch_quote_multiple_currencies(self) -> None:
+        """Test fetching quotes with multiple currency options."""
+        # Create a commodity with multiple currency options
+        multi_currency = data.Commodity(
+            meta={'filename': 'test', 'lineno': 1, 
+                 'price': 'USD:source1/TSLA JPY:source2/TSLA.T EUR:source3/TSLA.EU'},
+            date=datetime.date(2025, 5, 8),
+            currency='TSLA'
+        )
+        
+        # Configure mocks for different sources
+        usd_source = mock.Mock()
+        usd_source.get_latest_price.return_value = (Decimal('800.00'), datetime.date(2025, 5, 8), 'USD')
+        
+        jpy_source = mock.Mock()
+        jpy_source.get_latest_price.return_value = (Decimal('120000.00'), datetime.date(2025, 5, 8), 'JPY')
+        
+        eur_source = mock.Mock()
+        eur_source.get_latest_price.return_value = (Decimal('750.00'), datetime.date(2025, 5, 8), 'EUR')
+        
+        # Override the _get_source method to return different sources based on the source name
+        def mock_get_source(source_name, custom_only=False):
+            if source_name == 'source1':
+                return usd_source
+            elif source_name == 'source2':
+                return jpy_source
+            else:
+                return eur_source
+            
+        self.fetcher._get_source = mock_get_source
+        
+        # Fetch the quote (should use the first currency by default - USD)
+        price_entry = self.fetcher.fetch_quote(
+            commodity=multi_currency, 
+            quote_date=datetime.date(2025, 5, 8)
+        )
+        
+        # Verify the price entry uses USD
+        self.assertIsInstance(price_entry, Price)
+        self.assertEqual(price_entry.currency, "TSLA")
+        self.assertEqual(price_entry.amount, Decimal('800.00'))
+        self.assertEqual(price_entry.meta['source'], 'source1/TSLA')
+        
+        # Now make the USD source fail and verify it falls back to JPY
+        usd_source.get_latest_price.return_value = None
+        usd_source.get_historical_price.return_value = None
+        
+        price_entry = self.fetcher.fetch_quote(
+            commodity=multi_currency, 
+            quote_date=datetime.date(2025, 5, 8)
+        )
+        
+        # Verify the price entry falls back to JPY
+        self.assertIsInstance(price_entry, Price)
+        self.assertEqual(price_entry.currency, "TSLA")
+        self.assertEqual(price_entry.amount, Decimal('120000.00'))
+        self.assertEqual(price_entry.meta['source'], 'source2/TSLA.T')
 
     def test_fetch_quote_with_fallback(self) -> None:
         """Test fetching quotes with fallback sources."""
@@ -139,6 +263,43 @@ class TestQuoteFetcher(unittest.TestCase):
         self.assertEqual(price_entry.date, datetime.date(2025, 5, 8))
         self.assertEqual(price_entry.meta['source'], 'source2/BTC')
 
+    def test_fetch_quote_no_price_metadata(self) -> None:
+        """Test fetching a quote for a commodity with no price metadata."""
+        # Create a commodity with no price metadata
+        no_price_metadata = data.Commodity(
+            meta={'filename': 'test', 'lineno': 1},
+            date=datetime.date(2025, 5, 8),
+            currency='XYZ'
+        )
+        
+        # Fetch the quote
+        price_entry = self.fetcher.fetch_quote(
+            commodity=no_price_metadata,
+            quote_date=datetime.date(2025, 5, 8)
+        )
+        
+        # Verify no price entry is returned
+        self.assertIsNone(price_entry)
+
+    def test_fetch_quote_invalid_price_format(self) -> None:
+        """Test fetching a quote with invalid price metadata format."""
+        # Create a commodity with invalid price metadata format
+        invalid_price_format = data.Commodity(
+            meta={'filename': 'test', 'lineno': 1, 
+                 'price': 'invalid-format no-colon-separator'},
+            date=datetime.date(2025, 5, 8),
+            currency='BAD'
+        )
+        
+        # Fetch the quote
+        price_entry = self.fetcher.fetch_quote(
+            commodity=invalid_price_format,
+            quote_date=datetime.date(2025, 5, 8)
+        )
+        
+        # Verify no price entry is returned since no valid price sources were found
+        self.assertIsNone(price_entry)
+
     def test_fetch_quote_no_source(self) -> None:
         """Test fetching a quote when no source is available."""
         # Get Bitcoin commodity (no price metadata)
@@ -159,7 +320,7 @@ class TestQuoteFetcher(unittest.TestCase):
         apple = next(c for c in self.commodities if c.currency == "AAPL")
         
         # Create a fetcher with custom_only=True
-        custom_fetcher = quote_fetcher.QuoteFetcher(custom_only=True)
+        custom_fetcher = QuoteFetcher(custom_only=True)
         
         # Create a mock source that returns a price tuple
         mock_source = mock.Mock()

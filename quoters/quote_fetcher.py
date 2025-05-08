@@ -7,22 +7,19 @@ directory.
 """
 
 import datetime
-import importlib
 import logging
-from typing import Dict, List, Optional, Tuple, Set
+from collections import namedtuple
+from typing import List, Optional, Tuple
 
 from beancount.core import data
 from beancount.core.data import Commodity, Price
-from beancount.core.number import Decimal, ZERO
 from beanprice import source as beanprice_source
 
-# Import commodity_finder for finding price sources
-from quoters import commodity_finder
-# Import SOURCES from the quoters package
-from quoters import SOURCES
+# Import the get_source function from quoters package
+from quoters import get_source
 
-# Dictionary of custom source modules available in this package
-CUSTOM_SOURCES: Set[str] = set(k for k in SOURCES.keys() if k != 'example')
+# A namedtuple to represent price source specifications
+PriceSource = namedtuple('PriceSource', ['currency', 'source', 'ticker'])
 
 
 class QuoteFetcher:
@@ -57,155 +54,148 @@ class QuoteFetcher:
         if 'price' not in commodity.meta:
             return None
 
-        finder = commodity_finder.CommodityFinder()
-        source_specs = finder.get_price_sources(commodity=commodity)
+        price_sources = self._get_price_sources(commodity=commodity)
 
-        # Try each currency-source pair
-        for quote_currency, source_spec in source_specs.items():
+        # Try each price source in order
+        for price_source in price_sources:
             try:
-                price_entry = self._fetch_quote_for_currency(
+                price_entry = self._fetch_quote_for_source(
                     commodity=commodity,
                     quote_date=quote_date,
-                    quote_currency=quote_currency,
-                    source_spec=source_spec)
+                    price_source=price_source)
                 if price_entry:
                     return price_entry
             except Exception as e:
                 self._logger.warning(
                     f"Error fetching quote for {commodity.currency} "
-                    f"using {source_spec}: {e}")
+                    f"using {price_source.source}/{price_source.ticker}: {e}")
                 continue
 
-        # No price found for any currency-source pair
+        # No price found for any source
         return None
 
-    def _fetch_quote_for_currency(self, commodity: Commodity,
-                                  quote_date: datetime.date,
-                                  quote_currency: str,
-                                  source_spec: str) -> Optional[Price]:
-        """Fetch a quote for a commodity in a specific currency.
+    def _get_price_sources(self, commodity: Commodity) -> List[PriceSource]:
+        """Extract price sources from commodity metadata.
+        
+        The price metadata format is: "CURRENCY1:SOURCE1/TICKER1 CURRENCY2:SOURCE2/TICKER2 ..."
+        For example: "USD:yahoo/AAPL CAD:yahoo/AAPL.TO"
+        
+        Multiple sources for the same currency can be specified with comma separations:
+        "USD:source1/TICKER1,source2/TICKER2"
+        
+        Args:
+            commodity: Commodity directive to extract price sources from.
+            
+        Returns:
+            List of PriceSource tuples with (currency, source, ticker) for each price source.
+        """
+        if 'price' not in commodity.meta:
+            return []
+
+        price_meta = commodity.meta['price']
+        sources = []
+
+        # Split by spaces to get each currency:source/ticker pair
+        for pair in price_meta.split():
+            if ':' not in pair:
+                continue
+
+            currency, source_spec = pair.split(':', 1)
+
+            # Handle multiple sources for the same currency (comma-separated)
+            for source_ticker in source_spec.split(','):
+                if '/' not in source_ticker:
+                    self._logger.warning(
+                        f"Invalid source/ticker format: {source_ticker}")
+                    continue
+
+                source, ticker = source_ticker.split('/', 1)
+                sources.append(
+                    PriceSource(currency=currency,
+                                source=source,
+                                ticker=ticker))
+
+        return sources
+
+    def _fetch_quote_for_source(self, commodity: Commodity,
+                                quote_date: datetime.date,
+                                price_source: PriceSource) -> Optional[Price]:
+        """Fetch a quote for a commodity using a specific price source.
         
         Args:
             commodity: The commodity to fetch a price for.
             quote_date: The date to fetch the price for.
-            quote_currency: The currency to get the price in.
-            source_spec: The source specification string (may include multiple sources).
+            price_source: The price source tuple (currency, source, ticker).
             
         Returns:
             A Price directive with the fetched price, or None if no price could be fetched.
         """
-        # Split multiple sources (comma-separated)
-        for source_ticker in source_spec.split(','):
-            source_name, ticker = self._parse_source_ticker(source_ticker)
+        source_name = price_source.source
+        ticker = price_source.ticker
 
-            # Get the appropriate source
-            source = self._get_source(source_name, self.custom_only)
-            if not source:
-                self._logger.warning(
-                    f"Source '{source_name}' not found, skipping")
-                continue
+        # Get the appropriate source using the _get_source method
+        # Explicitly pass the custom_only parameter for test compatibility
+        source = self._get_source(source_name, self.custom_only)
+        if not source:
+            self._logger.warning(f"Source '{source_name}' not found, skipping")
+            return None
 
-            try:
-                # Try to get the latest price first
-                price_tuple = source.get_latest_price(ticker)
+        try:
+            # Try to get the latest price first
+            price_tuple = source.get_latest_price(ticker)
 
-                # If that fails or we need a historical price, try get_historical_price
-                if not price_tuple or quote_date < datetime.date.today():
-                    price_tuple = source.get_historical_price(
-                        ticker, quote_date)
+            # If that fails or we need a historical price, try get_historical_price
+            if not price_tuple or quote_date < datetime.date.today():
+                price_tuple = source.get_historical_price(ticker, quote_date)
 
-                # If we got a price, create and return a Price directive
-                if price_tuple:
-                    amount, price_date, currency = price_tuple
+            # If we got a price, create and return a Price directive
+            if price_tuple:
+                amount, price_date, currency = price_tuple
 
-                    # Make sure the date matches our requested date
-                    if price_date != quote_date:
-                        self._logger.info(
-                            f"Requested price for {quote_date} but got {price_date}"
-                        )
+                # Make sure the date matches our requested date
+                if price_date != quote_date:
+                    self._logger.info(
+                        f"Requested price for {quote_date} but got {price_date}"
+                    )
 
-                    # Create a metadata dictionary for the price entry
-                    meta = {
-                        'filename': commodity.meta.get('filename',
-                                                       '<unknown>'),
-                        'lineno': commodity.meta.get('lineno', 0),
-                        'source': source_ticker
-                    }
+                # Create a metadata dictionary for the price entry
+                meta = {
+                    'filename': commodity.meta.get('filename', '<unknown>'),
+                    'lineno': commodity.meta.get('lineno', 0),
+                    'source': f"{source_name}/{ticker}"
+                }
 
-                    # Create and return the Price directive
-                    return data.Price(meta=meta,
-                                      date=price_date,
-                                      currency=commodity.currency,
-                                      amount=amount)
-            except Exception as e:
-                self._logger.warning(f"Error using source {source_name}: {e}")
-                continue
+                # Create and return the Price directive
+                return data.Price(meta=meta,
+                                  date=price_date,
+                                  currency=commodity.currency,
+                                  amount=amount)
+        except Exception as e:
+            self._logger.warning(f"Error using source {source_name}: {e}")
+            return None
 
-        # No price found with any source
+        # No price found
         return None
-
-    def _parse_source_ticker(self, source_ticker: str) -> Tuple[str, str]:
-        """Parse a source/ticker string into source name and ticker.
-        
-        Args:
-            source_ticker: A string in the format "source/ticker".
-            
-        Returns:
-            A tuple of (source_name, ticker).
-        """
-        parts = source_ticker.split('/', 1)
-        if len(parts) != 2:
-            return (source_ticker, "")  # Invalid format
-
-        return (parts[0], parts[1])
 
     def _get_source(
             self,
             source_name: str,
-            custom_only: bool = False) -> Optional[beanprice_source.Source]:
+            custom_only: bool = None) -> Optional[beanprice_source.Source]:
         """Get a price source by name.
         
-        This method tries to get a source from:
-        1. Custom sources defined in this package (if available)
-        2. Built-in sources from beanprice (if custom_only is False)
+        This method is a wrapper around the global get_source function to maintain
+        backwards compatibility with tests that mock this method.
         
         Args:
             source_name: The name of the source to get.
-            custom_only: If True, only check custom sources.
+            custom_only: If True, only try to load from the quoters package.
+                         If None, use the QuoteFetcher's custom_only setting.
             
         Returns:
             A Source instance that can fetch prices, or None if no source was found.
         """
-        # First try to get a custom source from our package
-        if source_name in CUSTOM_SOURCES:
-            return self._get_custom_source(source_name)
+        # If custom_only is explicitly provided, use it; otherwise use the instance setting
+        use_custom_only = self.custom_only if custom_only is None else custom_only
 
-        # If we couldn't find a custom source and we're allowed to use built-in sources,
-        # try to get a built-in source from beanprice
-        if not custom_only:
-            try:
-                # This follows the same approach as beanprice.source.get_source
-                module_name = f"beanprice.sources.{source_name}"
-                module = importlib.import_module(module_name)
-                if hasattr(module, 'Source'):
-                    return module.Source()
-            except ImportError:
-                self._logger.info(
-                    f"No built-in source found for '{source_name}'")
-
-        return None
-
-    def _get_custom_source(
-            self, source_name: str) -> Optional[beanprice_source.Source]:
-        """Get a custom price source from this package.
-        
-        Args:
-            source_name: The name of the custom source to get.
-            
-        Returns:
-            A Source instance from the custom sources, or None if not found.
-        """
-        source_class = SOURCES.get(source_name)
-        if source_class:
-            return source_class()
-        return None
+        # Delegate to the global get_source function
+        return get_source(source_name=source_name, custom_only=use_custom_only)
