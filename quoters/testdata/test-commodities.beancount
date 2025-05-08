@@ -7,15 +7,15 @@
 
 2020-01-01 commodity AAPL
   name: "Apple Inc."
-  price: "USD:yahoo/AAPL"
+  price: "USD:mock_yahoo/AAPL"
   
 2020-01-01 commodity MSFT
   name: "Microsoft Corporation"
-  price: "USD:yahoo/MSFT"
+  price: "USD:mock_yahoo/MSFT"
   
 2020-01-01 commodity GOOGL
   name: "Alphabet Inc."
-  price: "USD:yahoo/GOOGL"
+  price: "USD:mock_yahoo/GOOGL"
   quote: "disabled"
   
 2020-01-01 commodity BTC

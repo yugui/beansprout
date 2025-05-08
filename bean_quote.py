@@ -14,39 +14,52 @@ import os
 import sys
 import click
 import datetime
+import logging
 from typing import List, Optional, Dict, Any, Tuple, Set
 
 from beancount.core import data
-from beancount.core.data import Entries, Directive, Commodity
+from beancount.core.data import Entries, Directive, Commodity, Price
 from beancount import loader
 from beanprice import source
 
-# Import the CommodityFinder class
+# Import the commodity finder and quote fetcher
 from quoters.commodity_finder import CommodityFinder
+from quoters.quote_fetcher import QuoteFetcher
 
 
 @click.command()
-@click.argument('filenames', nargs=-1, type=click.Path(exists=True, resolve_path=True), required=True)
-@click.option('--date', '-d', type=click.DateTime(formats=["%Y-%m-%d"]),
+@click.argument('filenames',
+                nargs=-1,
+                type=click.Path(exists=True, resolve_path=True),
+                required=True)
+@click.option('--date',
+              '-d',
+              type=click.DateTime(formats=["%Y-%m-%d"]),
               help='Fetch prices for this specific date.')
-@click.option('--inactive', '-i', is_flag=True, 
+@click.option('--inactive',
+              '-i',
+              is_flag=True,
               help='Include inactive commodities.')
-@click.option('--custom-only', '-c', is_flag=True,
+@click.option('--custom-only',
+              '-c',
+              is_flag=True,
               help='Use only custom quoters from quoters/ directory.')
-@click.option('--verbose', '-v', count=True,
+@click.option('--verbose',
+              '-v',
+              count=True,
               help='Print verbose information about the process.')
-@click.option('--dryrun', is_flag=True,
+@click.option('--dryrun',
+              is_flag=True,
               help='Print extracted price entries without writing them.')
-@click.option('--destination', '-o', type=click.Path(file_okay=False, resolve_path=True),
-              default=os.getcwd(),
-              help='Base directory for output files (default: current directory).')
-def bean_quote(filenames: List[str], 
-              date: Optional[datetime.datetime], 
-              inactive: bool, 
-              custom_only: bool,
-              verbose: int,
-              dryrun: bool, 
-              destination: str) -> None:
+@click.option(
+    '--destination',
+    '-o',
+    type=click.Path(file_okay=False, resolve_path=True),
+    default=os.getcwd(),
+    help='Base directory for output files (default: current directory).')
+def bean_quote(filenames: List[str], date: Optional[datetime.datetime],
+               inactive: bool, custom_only: bool, verbose: int, dryrun: bool,
+               destination: str) -> None:
     """Fetch price quotes for commodities using custom quoters.
     
     This command fetches price quotes for commodities defined in the given
@@ -59,60 +72,136 @@ def bean_quote(filenames: List[str],
     
     FILENAMES are one or more beancount files containing commodity definitions.
     """
+    # Set up logging
+    logging_level = logging.WARNING
+    if verbose == 1:
+        logging_level = logging.INFO
+    elif verbose >= 2:
+        logging_level = logging.DEBUG
+    logging.basicConfig(level=logging_level,
+                        format='%(levelname)s: %(message)s')
+
     # Set up the commodity finder
     finder = CommodityFinder()
-    
+
     # Load all entries from all input files
     all_entries: List[Directive] = []
     all_errors: List[str] = []
-    
+
     if verbose:
         click.echo(f"Loading entries from {len(filenames)} file(s)")
-    
+
     for filename in filenames:
         if verbose > 1:
             click.echo(f"  Loading {filename}")
-            
+
         entries, errors, options_map = loader.load_file(filename=filename)
         all_entries.extend(entries)
         all_errors.extend(errors)
-    
+
     # Report any errors
     if all_errors:
         for error in all_errors:
             print(error, file=sys.stderr)
         if len(all_errors) > 10:
             print(f"Found {len(all_errors)} errors in total", file=sys.stderr)
-    
+
     # Find all commodities
     all_commodities = finder.find_all_commodities(entries=all_entries)
     if verbose:
         click.echo(f"Found {len(all_commodities)} commodities")
-    
+
     # Filter active commodities
     if not inactive:
-        active_commodities = finder.filter_active_commodities(commodities=all_commodities)
+        active_commodities = finder.filter_active_commodities(
+            commodities=all_commodities)
         if verbose:
-            click.echo(f"Filtered to {len(active_commodities)} active commodities")
+            click.echo(
+                f"Filtered to {len(active_commodities)} active commodities")
     else:
         active_commodities = all_commodities
         if verbose:
             click.echo("Including all commodities (--inactive flag)")
-    
+
     # Find the price date to use
     price_date = date.date() if date else datetime.date.today()
     if verbose:
         click.echo(f"Using price date: {price_date}")
-    
-    # TODO: Implement price fetching using custom quoters and beanprice
-    
-    # TODO: Implement writing price entries to destination files
-    
+
+    # Create the quote fetcher
+    fetcher = QuoteFetcher(custom_only=custom_only)
+
+    # Fetch quotes for each active commodity
+    price_entries = []
+    for commodity in active_commodities:
+        if verbose > 1:
+            click.echo(f"Fetching quote for {commodity.currency}")
+
+        price_entry = fetcher.fetch_quote(commodity=commodity,
+                                          quote_date=price_date)
+
+        if price_entry:
+            price_entries.append(price_entry)
+            if verbose > 1:
+                click.echo(
+                    f"  Got price: {price_entry.amount} {price_entry.currency}"
+                )
+        elif verbose > 1:
+            click.echo(f"  No price found for {commodity.currency}")
+
+    if verbose:
+        click.echo(f"Fetched {len(price_entries)} price entries")
+
+    # Write price entries to destination files or print them in dry run mode
     if dryrun:
-        click.echo("Dry run - not writing any output")
+        click.echo("Dry run - printing price entries:")
+        for price in price_entries:
+            click.echo(f"{price.date} price {price.currency} {price.amount}")
     else:
-        click.echo(f"Base destination directory: {destination}")
-            
+        # Create the quotes directory structure
+        quotes_dir = os.path.join(destination, 'quotes')
+        os.makedirs(quotes_dir, exist_ok=True)
+
+        # Group price entries by commodity and month
+        price_map: Dict[str, Dict[str, List[Price]]] = {}
+        for price in price_entries:
+            symbol = price.currency
+            month_key = price.date.strftime("%Y%m")
+
+            if symbol not in price_map:
+                price_map[symbol] = {}
+
+            if month_key not in price_map[symbol]:
+                price_map[symbol][month_key] = []
+
+            price_map[symbol][month_key].append(price)
+
+        # Write each group to a separate file
+        for symbol, months in price_map.items():
+            # Create the directory for this symbol
+            symbol_dir = os.path.join(quotes_dir, symbol)
+            os.makedirs(symbol_dir, exist_ok=True)
+
+            for month_key, prices in months.items():
+                # Sort prices by date
+                prices.sort(key=lambda p: p.date)
+
+                # Create the file path
+                file_path = os.path.join(symbol_dir, f"{month_key}.beancount")
+
+                if verbose > 1:
+                    click.echo(f"Writing {len(prices)} prices to {file_path}")
+
+                # Write the prices to the file
+                with open(file_path, 'w') as f:
+                    for price in prices:
+                        f.write(
+                            f"{price.date} price {price.currency} {price.amount}\n"
+                        )
+
+        if verbose:
+            click.echo(f"Wrote price entries to {quotes_dir}")
+
     click.echo("Done.")
 
 
