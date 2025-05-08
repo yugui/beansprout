@@ -1,5 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@beancount_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "quoters",
@@ -8,6 +8,7 @@ py_library(
         "commodity_finder.py",
         "example.py",
         "quote_fetcher.py",
+        "quote_writer.py",
         "yahoo.py",
     ],
     visibility = ["//visibility:public"],
@@ -45,5 +46,14 @@ py_test(
         ":quoters",
         requirement("beancount"),
         requirement("beanprice"),
+    ],
+)
+
+py_test(
+    name = "quote_writer_test",
+    srcs = ["quote_writer_test.py"],
+    deps = [
+        ":quoters",
+        requirement("beancount"),
     ],
 )

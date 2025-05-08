@@ -25,6 +25,7 @@ from beanprice import source
 # Import the commodity finder and quote fetcher
 from quoters.commodity_finder import CommodityFinder
 from quoters.quote_fetcher import QuoteFetcher
+from quoters.quote_writer import QuoteWriter
 
 
 @click.command()
@@ -152,55 +153,22 @@ def bean_quote(filenames: List[str], date: Optional[datetime.datetime],
     if verbose:
         click.echo(f"Fetched {len(price_entries)} price entries")
 
+    # Create quote writer for destination file management
+    writer = QuoteWriter(destination_base=destination, verbose=verbose)
+
     # Write price entries to destination files or print them in dry run mode
     if dryrun:
         click.echo("Dry run - printing price entries:")
         for price in price_entries:
-            click.echo(f"{price.date} price {price.currency} {price.amount}")
+            click.echo(writer.format_price_for_display(price))
     else:
-        # Create the quotes directory structure
-        quotes_dir = os.path.join(destination, 'quotes')
-        os.makedirs(quotes_dir, exist_ok=True)
-
-        # Group price entries by commodity and month
-        price_map: Dict[str, Dict[str, List[Price]]] = {}
-        for price in price_entries:
-            symbol = price.currency
-            month_key = price.date.strftime("%Y%m")
-
-            if symbol not in price_map:
-                price_map[symbol] = {}
-
-            if month_key not in price_map[symbol]:
-                price_map[symbol][month_key] = []
-
-            price_map[symbol][month_key].append(price)
-
-        # Write each group to a separate file
-        for symbol, months in price_map.items():
-            # Create the directory for this symbol
-            symbol_dir = os.path.join(quotes_dir, symbol)
-            os.makedirs(symbol_dir, exist_ok=True)
-
-            for month_key, prices in months.items():
-                # Sort prices by date
-                prices.sort(key=lambda p: p.date)
-
-                # Create the file path
-                file_path = os.path.join(symbol_dir, f"{month_key}.beancount")
-
-                if verbose > 1:
-                    click.echo(f"Writing {len(prices)} prices to {file_path}")
-
-                # Write the prices to the file
-                with open(file_path, 'w') as f:
-                    for price in prices:
-                        f.write(
-                            f"{price.date} price {price.currency} {price.amount}\n"
-                        )
+        written_files = writer.write_prices(price_entries)
 
         if verbose:
-            click.echo(f"Wrote price entries to {quotes_dir}")
+            total_files = sum(len(files) for files in written_files.values())
+            click.echo(
+                f"Wrote price entries for {len(written_files)} commodities "
+                f"to {total_files} files in {writer.quotes_dir}")
 
     click.echo("Done.")
 
