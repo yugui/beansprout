@@ -9,7 +9,6 @@ py_library(
         "example.py",
         "quote_fetcher.py",
         "quote_writer.py",
-        "yahoo.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
