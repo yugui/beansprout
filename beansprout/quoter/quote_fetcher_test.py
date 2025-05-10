@@ -11,8 +11,8 @@ from beancount.core import data
 from beancount.core.data import Commodity, Price
 from beancount.core.number import Decimal
 
-from quoters import commodity_finder
-from quoters.quote_fetcher import QuoteFetcher, PriceSource
+from beansprout.quoter import commodity_finder
+from beansprout.quoter.quote_fetcher import QuoteFetcher, PriceSource
 
 
 class TestQuoteFetcher(unittest.TestCase):

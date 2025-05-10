@@ -39,7 +39,7 @@ py_binary(
         requirement("click"),
         requirement("beancount"),
         requirement("beanprice"),
-        "//quoters",
+        "//beansprout/quoter",
     ],
 )
 
@@ -51,7 +51,7 @@ py_package(
         "bean_price",
         "bean_quote",
         "importers",
-        "quoters",
+        "beansprout",
         "data",
     ],
     deps = [

@@ -1,0 +1,17 @@
+load("@beancount_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "sources",
+    srcs = [
+        "__init__.py",
+        "example.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//beansprout/quoter",
+        requirement("beancount"),
+        requirement("beanprice"),
+        requirement("requests"),
+    ],
+)

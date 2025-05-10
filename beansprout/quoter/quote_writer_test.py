@@ -12,7 +12,7 @@ from beancount.core.number import D
 from beancount.core.amount import Amount
 from beancount.core.data import Price
 
-from quoters.quote_writer import QuoteWriter
+from beansprout.quoter.quote_writer import QuoteWriter
 
 
 class QuoteWriterTest(unittest.TestCase):

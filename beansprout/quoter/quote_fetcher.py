@@ -15,8 +15,8 @@ from beancount.core import data
 from beancount.core.data import Commodity, Price
 from beanprice import source as beanprice_source
 
-# Import the get_source function from quoters package
-from quoters import get_source
+# Import the get_source function from this package
+from beansprout.quoter import get_source
 
 # A namedtuple to represent price source specifications
 PriceSource = namedtuple('PriceSource', ['currency', 'source', 'ticker'])
@@ -34,7 +34,7 @@ class QuoteFetcher:
         """Initialize the QuoteFetcher.
         
         Args:
-            custom_only: If True, only use custom quoters from the quoters directory.
+            custom_only: If True, only use custom quoters from the beansprout.quoter.sources directory.
                          If False, also use built-in beanprice sources.
         """
         self.custom_only = custom_only
@@ -188,7 +188,7 @@ class QuoteFetcher:
         
         Args:
             source_name: The name of the source to get.
-            custom_only: If True, only try to load from the quoters package.
+            custom_only: If True, only try to load from the beansprout.quoter.sources package.
                          If None, use the QuoteFetcher's custom_only setting.
             
         Returns:

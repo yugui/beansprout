@@ -2,7 +2,7 @@
 """Command for fetching and managing price quotes using custom quoters.
 
 This command extends the default bean-price functionality by supporting
-custom price quoters from the quoters/ directory and providing additional
+custom price quoters from the beansprout.quoter package and providing additional
 features for price quote management.
 
 The bean-quote command reads commodity definitions from beancount files,
@@ -22,10 +22,10 @@ from beancount.core.data import Entries, Directive, Commodity, Price
 from beancount import loader
 from beanprice import source
 
-# Import the commodity finder and quote fetcher
-from quoters.commodity_finder import CommodityFinder
-from quoters.quote_fetcher import QuoteFetcher
-from quoters.quote_writer import QuoteWriter
+# Import the commodity finder and quote fetcher from new package structure
+from beansprout.quoter.commodity_finder import CommodityFinder
+from beansprout.quoter.quote_fetcher import QuoteFetcher
+from beansprout.quoter.quote_writer import QuoteWriter
 
 
 @click.command()
@@ -44,7 +44,7 @@ from quoters.quote_writer import QuoteWriter
 @click.option('--custom-only',
               '-c',
               is_flag=True,
-              help='Use only custom quoters from quoters/ directory.')
+              help='Use only custom quoters from beansprout.quoter.sources package.')
 @click.option('--verbose',
               '-v',
               count=True,
@@ -64,8 +64,8 @@ def bean_quote(filenames: List[str], date: Optional[datetime.datetime],
     """Fetch price quotes for commodities using custom quoters.
     
     This command fetches price quotes for commodities defined in the given
-    beancount files using custom quoters from the quoters/ directory and
-    optionally built-in quoters from beanprice.
+    beancount files using custom quoters from the beansprout.quoter.sources package
+    and optionally built-in quoters from beanprice.
     
     The command outputs price directives to files named:
     $destination/quotes/$symbol/YYYYmm.beancount

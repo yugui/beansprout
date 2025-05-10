@@ -20,7 +20,8 @@ class CommodityFinder:
     considered for price fetching.
     """
 
-    def find_all_commodities(self, entries: List[Directive]) -> List[Commodity]:
+    def find_all_commodities(self,
+                             entries: List[Directive]) -> List[Commodity]:
         """Find all commodity directives in the given entries.
         
         Args:
@@ -29,10 +30,12 @@ class CommodityFinder:
         Returns:
             List of commodity directives found in the entries.
         """
-        return [entry for entry in entries 
-                if isinstance(entry, data.Commodity)]
-    
-    def filter_active_commodities(self, commodities: List[Commodity]) -> List[Commodity]:
+        return [
+            entry for entry in entries if isinstance(entry, data.Commodity)
+        ]
+
+    def filter_active_commodities(
+            self, commodities: List[Commodity]) -> List[Commodity]:
         """Filter out inactive commodities that should not have prices fetched.
         
         A commodity is considered active if:
@@ -50,40 +53,11 @@ class CommodityFinder:
             # Check if the commodity has price metadata
             if 'price' not in commodity.meta:
                 continue
-                
+
             # Check if the commodity has quote: disabled metadata
             if commodity.meta.get('quote') == 'disabled':
                 continue
-                
+
             active.append(commodity)
-            
+
         return active
-    
-    def get_price_sources(self, commodity: Commodity) -> Dict[str, str]:
-        """Extract price sources from commodity metadata.
-        
-        The price metadata format is: "CURRENCY1:SOURCE1/TICKER1 CURRENCY2:SOURCE2/TICKER2 ..."
-        For example: "USD:yahoo/AAPL CAD:yahoo/AAPL.TO"
-        
-        Args:
-            commodity: Commodity directive to extract price sources from.
-            
-        Returns:
-            Dictionary mapping quote currencies to source/ticker strings.
-            For example: {"USD": "yahoo/AAPL", "CAD": "yahoo/AAPL.TO"}
-        """
-        if 'price' not in commodity.meta:
-            return {}
-            
-        price_meta = commodity.meta['price']
-        sources = {}
-        
-        # Split by spaces to get each currency:source/ticker pair
-        for pair in price_meta.split():
-            if ':' not in pair:
-                continue
-                
-            currency, source_ticker = pair.split(':', 1)
-            sources[currency] = source_ticker
-            
-        return sources

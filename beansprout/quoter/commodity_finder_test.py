@@ -7,7 +7,7 @@ import unittest
 from beancount.core.data import Commodity
 from beancount import loader
 
-from quoters import commodity_finder
+from beansprout.quoter import commodity_finder
 
 
 class TestCommodityFinder(unittest.TestCase):
@@ -41,18 +41,6 @@ class TestCommodityFinder(unittest.TestCase):
         # Check that we found the specific commodities we expect
         currencies = {c.currency for c in commodities}
         self.assertEqual(currencies, {"USD", "AAPL", "MSFT", "GOOGL", "BTC"})
-
-    def test_get_price_sources(self) -> None:
-        """Test extracting price sources from commodity metadata."""
-        # Find the Apple commodity
-        commodities = self.finder.find_all_commodities(entries=self.entries)
-        apple = next(c for c in commodities if c.currency == "AAPL")
-
-        # Get its price sources
-        sources = self.finder.get_price_sources(commodity=apple)
-
-        # Check that we got the expected sources
-        self.assertEqual(sources, {"USD": "mock_yahoo/AAPL"})
 
     def test_filter_active_commodities(self) -> None:
         """Test filtering active commodities."""
