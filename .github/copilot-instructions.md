@@ -50,8 +50,13 @@ new branch for each.
 
 # Source Structure
 * `third_party/` -- any third-party library dependencies
-* `importers/` -- custom importer libraries
-* `quoters/` -- custom price quoters
+* `beansprout/` -- our custom implementation of Beancount extensions
+  * `importer/` -- custom importer libraries for transaction importing
+    * `importers/` -- specific importer implementations for various financial institutions
+      * `moneyforward.py` -- importer for MoneyForward ME CSV files
+  * `quoter/` -- custom price quoters for fetching commodity prices
+    * `sources/` -- specific price source implementations
+* `data/` -- data files for the project
 
 ## Coding Principles
 
@@ -63,6 +68,13 @@ new branch for each.
   with more than 3 parameters or when the parameters are not self-explanatory.
 * Prefer namedtuple over tuple when you need to have more than three elements
   in a tuple or the arguments are not self-explanatory.
+
+### Bazel
+* We use `rules_python` for managing the python dependencies.
+* We use bzlmod for managing the Bazel dependencies.
+* The Bazel build files are named `BUILD.bazel` and `MODULE.bazel` files.
+* `glob` function in the build configurations are discouraged. You should
+  explicitly list the filename attributes.
 
 ## Formatting
 The code should be formatted with the following formatters before you make git
