@@ -165,6 +165,10 @@ class QuoteFetcher:
                     'source': f"{source_name}/{ticker}"
                 }
 
+                # Convert datetime to date if it's a datetime object
+                if isinstance(price_date, datetime.datetime):
+                    price_date = price_date.date()
+
                 # Create and return the Price directive
                 return data.Price(meta=meta,
                                   date=price_date,
