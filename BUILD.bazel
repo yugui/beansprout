@@ -20,17 +20,6 @@ py_binary(
 )
 
 py_binary(
-    name = "bean-price",
-    srcs = ["bean_price.py"],
-    main = "bean_price.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("beancount"),
-        requirement("beanprice"),
-    ],
-)
-
-py_binary(
     name = "bean-quote",
     srcs = ["bean_quote.py"],
     main = "bean_quote.py",
@@ -48,14 +37,12 @@ py_package(
     name = "beancount_pkg",
     packages = [
         "bean_gulp",
-        "bean_price",
         "bean_quote",
         "beansprout",
         "data",
     ],
     deps = [
         ":bean-gulp",
-        ":bean-price",
         ":bean-quote",
     ],
 )
@@ -67,7 +54,6 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "bean-gulp = bean_gulp:main",
-            "bean-price = bean_price:main",
             "bean-quote = bean_quote:main",
         ],
     },
