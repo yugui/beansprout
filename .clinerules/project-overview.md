@@ -1,24 +1,31 @@
-# BeanCount
+# Beansprout
 
-This project provides a set of custom commands and their underlying python
-packages on top of the Beancount doube-entry bookkeeping system.
+This project provides a custom command `bean-sprout` on top of the Beancount
+double-entry bookkeeping system. The command provides more convenient features
+than those in plain Beancount, such as:
 
-You can refer the following docs for the basic idea of Beancount:
-* [Beancount User's Manual](https://beancount.github.io/docs/index.html)
-  * [Getting Started with Beancount](https://beancount.github.io/docs/getting_started_with_beancount.html)
-  * [Beancount Language Syntax](https://beancount.github.io/docs/beancount_language_syntax.html)
-  * [Beancount v3 Design Doc](https://docs.google.com/document/d/1qPdNXaz5zuDQ8M9uoZFyyFis7hA0G55BEfhWhrVBsfc/edit?tab=t.0)
-* [Fava](https://beancount.github.io/fava/index.html) gives web UI for leadgers
-  in the beancount format.
+- Automatic merging of new transactions into existing files by assuming the file path
+  where the new transactions are recorded
+- Simplified workflow for managing Beancount ledgers through a consistent directory
+  structure
 
-Beancount supports custom extensions of price quotes of commodities, importing
-transactions from other formats, and more pages in the Fava UI.
-You can write python libraries on top of the APIs in the following pypi packages
-when you want to give such customizations:
-* `beancount` -- The basic package
-* `beangulp` -- The framework for custom transaction importers
-* `beanprice` -- The price quotes fetcher
-* `fava` -- The web UI
+You should take a look at `README.md` for the high-level product definition
+of this repository, and about the overall idea of Beancount itself.
+
+## Ledger Directory Structure
+Beansprout assumes a specific directory structure for organizing ledger files, which
+is described in detail in `README.md`. This structure enables many of the automated
+features that make Beansprout more convenient than plain Beancount.
+
+# Development Environment Setup
+To contribute to this project, you need to:
+
+1. Install the following tools and make them available in your `$PATH`:
+   * `bazelisk` - For running Bazel with the correct version (currently using version 8.2.1)
+   * `buildifier` - For formatting Bazel files
+   * `yapf` - For formatting Python files
+
+2. Clone the repository and familiarize yourself with the codebase structure
 
 # Toolchains
 * This project uses Bazel as the build system. You must maintain the Bazel build
@@ -40,6 +47,11 @@ The development cycle is as follows:
    2. Get the design reviewed and approved by me
    3. Implement the design with TDD
    4. Make sure that all tests are passed and all files are well-formatted
+      * All Bazel tests are passing (`bazel test //...`)
+      * All `py_binary` targets successfully exit when passed the `--help` option
+      * All files are properly formatted using the required formatters:
+        * `buildifier` for Bazel files
+        * `yapf -i` for Python files
    5. Make a git commit with a description that explains the design overview.
       The description should not repeat the code-level changes.
 4. Explain the example usage for the new feature or a new command
@@ -76,13 +88,6 @@ new branch for each.
 * `glob` function in the build configurations are discouraged. You should
   explicitly list the filename attributes.
 
-## Formatting
-The code should be formatted with the following formatters before you make git
-commits.
-
-* `buildifier` -- for Bazel files
-* `yapf` -- for python files. You need to pass `-i` option to in-place edit.
-
 # Third-party dependencies
 You need to maintain the third-party dependencies in the `third_party/`
 directory.
@@ -101,7 +106,17 @@ name in the file names.
 You can refer the files under the individual linked directories to see the
 source of the packages like `beancount`, `beangulp`.
 
-# API References
+## Base Libraries
+Beancount supports custom extensions of price quotes of commodities, importing
+transactions from other formats, and more pages in the Fava UI.
+You can write python libraries on top of the APIs in the following pypi packages
+when you want to give such customizations:
+* `beancount` -- The basic package
+* `beangulp` -- The framework for custom transaction importers
+* `beanprice` -- The price quotes fetcher
+* `fava` -- The web UI
+
+## API References
 You can refer the following reference implementations and API references for
 the custom packages:
 
