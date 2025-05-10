@@ -15,19 +15,8 @@ py_binary(
         requirement("click"),
         requirement("beancount"),
         requirement("beangulp"),
-        "//beansprout/importer",
-    ],
-)
-
-py_binary(
-    name = "bean-quote",
-    srcs = ["bean_quote.py"],
-    main = "bean_quote.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("click"),
-        requirement("beancount"),
         requirement("beanprice"),
+        "//beansprout/importer",
         "//beansprout/quoter",
     ],
 )
@@ -36,13 +25,11 @@ py_binary(
 py_package(
     name = "beancount_pkg",
     packages = [
-        "bean_quote",
         "bean_sprout",
         "beansprout",
         "data",
     ],
     deps = [
-        ":bean-quote",
         ":bean-sprout",
     ],
 )
@@ -54,7 +41,6 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "bean-sprout = bean_sprout:main",
-            "bean-quote = bean_quote:main",
         ],
     },
     python_tag = "py3",
