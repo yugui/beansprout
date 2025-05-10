@@ -1,4 +1,10 @@
 #!/usr/bin/python3
+"""Command-line tool for managing Beancount ledgers with Beansprout.
+
+This module provides the bean-sprout command with subcommands for importing,
+merging, and training on transaction data using the Beansprout directory
+structure conventions.
+"""
 
 import os
 import click
@@ -47,6 +53,7 @@ def load_account_mappings(file_path):
     except FileNotFoundError:
         print(f"Warning: Account mapping file not found: {file_path}")
     return mappings
+
 
 @click.command('merge')
 @click.argument('src',
@@ -100,6 +107,7 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
     # Exit with the appropriate status code
     if status != 0:
         sys.exit(status)
+
 
 @click.command('train')
 @click.argument('src',

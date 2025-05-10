@@ -3,13 +3,13 @@ load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
 py_binary(
-    name = "bean-gulp",
-    srcs = ["bean_gulp.py"],
+    name = "bean-sprout",
+    srcs = ["bean_sprout.py"],
     data = [
         "//data:expense_accounts.tsv",
         "//data:income_accounts.tsv",
     ],
-    main = "bean_gulp.py",
+    main = "bean_sprout.py",
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
@@ -36,14 +36,14 @@ py_binary(
 py_package(
     name = "beancount_pkg",
     packages = [
-        "bean_gulp",
         "bean_quote",
+        "bean_sprout",
         "beansprout",
         "data",
     ],
     deps = [
-        ":bean-gulp",
         ":bean-quote",
+        ":bean-sprout",
     ],
 )
 
@@ -53,7 +53,7 @@ py_wheel(
     distribution = "beansprout",
     entry_points = {
         "console_scripts": [
-            "bean-gulp = bean_gulp:main",
+            "bean-sprout = bean_sprout:main",
             "bean-quote = bean_quote:main",
         ],
     },
