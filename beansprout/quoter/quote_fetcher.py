@@ -141,16 +141,25 @@ class QuoteFetcher:
             return None
 
         try:
+            # Check if the ticker indicates an inverted rate
+            inverted_rate = ticker.startswith('^')
+            ticker_to_use = ticker[1:] if inverted_rate else ticker
+
             # Try to get the latest price first
-            price_tuple = source.get_latest_price(ticker)
+            price_tuple = source.get_latest_price(ticker_to_use)
 
             # If that fails or we need a historical price, try get_historical_price
             if not price_tuple or quote_date < datetime.date.today():
-                price_tuple = source.get_historical_price(ticker, quote_date)
+                price_tuple = source.get_historical_price(
+                    ticker_to_use, quote_date)
 
             # If we got a price, create and return a Price directive
             if price_tuple:
-                amount, price_date, currency = price_tuple
+                price, price_date, currency = price_tuple
+
+                # Handle inverted rate if necessary
+                if inverted_rate and price != 0:
+                    price = 1 / price
 
                 # Make sure the date matches our requested date
                 if price_date != quote_date:
@@ -173,7 +182,7 @@ class QuoteFetcher:
                 return data.Price(meta=meta,
                                   date=price_date,
                                   currency=commodity.currency,
-                                  amount=amount)
+                                  amount=price)
         except Exception as e:
             self._logger.warning(f"Error using source {source_name}: {e}")
             return None
