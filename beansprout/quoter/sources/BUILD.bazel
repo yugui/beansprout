@@ -1,17 +1,27 @@
 load("@beansprout_deps//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "sources",
     srcs = [
         "__init__.py",
+        "dispatching.py",
         "example.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//beansprout/quoter",
         requirement("beancount"),
         requirement("beanprice"),
         requirement("requests"),
+    ],
+)
+
+py_test(
+    name = "dispatching_test",
+    srcs = ["dispatching_test.py"],
+    deps = [
+        ":sources",
+        requirement("beancount"),
+        requirement("beanprice"),
     ],
 )
