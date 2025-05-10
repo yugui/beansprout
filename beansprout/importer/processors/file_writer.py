@@ -53,8 +53,9 @@ class FileWriter(Processor):
         """Process the output for the extracted and deduplicated entries.
 
         This method writes entries to files in the destination directory,
-        organized by account and year-month. It handles duplicate entries
-        according to the following rules:
+        organized by account and year-month following the Beansprout directory
+        structure (transactions/[Account Type]/[Account Path]/${YYYYmm}.beancount).
+        It handles duplicate entries according to the following rules:
         1. Skip entries that are duplicates with entries in the destination file.
         2. Comment out entries that are duplicates with entries from other files.
 
@@ -65,10 +66,9 @@ class FileWriter(Processor):
         """
         for (account, year_month), entry_importer_pairs in sorted(
                 entries_by_account_month.items()):
-            # Create the destination path
-            account_path = account.replace(':', os.sep)
-            dest_dir = os.path.join(self.destination, account_path)
-            dest_file = os.path.join(dest_dir, f"{year_month}.beancount")
+            # Create the destination path using the helper method
+            dest_file = self.get_account_file_path(account, year_month)
+            dest_dir = os.path.dirname(dest_file)
 
             # Check if the destination file already exists and has entries
             existing_entries_in_dest = entries_by_dest_file.get(dest_file, [])

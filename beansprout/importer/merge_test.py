@@ -32,9 +32,13 @@ class TestProcessor(unittest.TestCase):
         self.dest_dir = os.path.join(self.test_dir, "dest")
         os.makedirs(self.dest_dir, exist_ok=True)
 
-        # Create a mock account directory
-        self.account_dir = os.path.join(self.dest_dir, "Assets", "Cash",
-                                        "Wallet")
+        # Create the transactions directory structure
+        self.transactions_dir = os.path.join(self.dest_dir, "transactions")
+        os.makedirs(self.transactions_dir, exist_ok=True)
+
+        # Create a mock account directory following Beansprout structure
+        self.account_dir = os.path.join(self.transactions_dir, "Assets",
+                                        "Cash", "Wallet")
         os.makedirs(self.account_dir, exist_ok=True)
 
         # Create a test transaction
@@ -99,6 +103,34 @@ class TestProcessor(unittest.TestCase):
             """Record that process_output was called and with what arguments."""
             self.output_called = True
             self.output_args = (entries_by_account_month, entries_by_dest_file)
+
+    def test_get_account_file_path(self):
+        """Test the get_account_file_path method."""
+        processor = self.ConcreteProcessor(importers=[self.mock_importer],
+                                           destination=self.dest_dir)
+
+        # Test simple account
+        expected_path = os.path.join(self.dest_dir, "transactions", "Assets",
+                                     "Cash", "Wallet", "202504.beancount")
+        actual_path = processor.get_account_file_path("Assets:Cash:Wallet",
+                                                      "202504")
+        self.assertEqual(actual_path, expected_path)
+
+        # Test more complex account
+        expected_path = os.path.join(self.dest_dir, "transactions",
+                                     "Liabilities", "CreditCard", "Chase",
+                                     "202505.beancount")
+        actual_path = processor.get_account_file_path(
+            "Liabilities:CreditCard:Chase", "202505")
+        self.assertEqual(actual_path, expected_path)
+
+        # Test account with many components
+        expected_path = os.path.join(self.dest_dir, "transactions", "Assets",
+                                     "Investments", "Brokerage", "Stocks",
+                                     "Tech", "202506.beancount")
+        actual_path = processor.get_account_file_path(
+            "Assets:Investments:Brokerage:Stocks:Tech", "202506")
+        self.assertEqual(actual_path, expected_path)
 
     @mock.patch("beangulp.identify.identify")
     @mock.patch("beangulp.extract.extract_from_file")
@@ -179,8 +211,11 @@ class TestProcessor(unittest.TestCase):
             ],
         )
 
-        # Create an existing file
-        existing_file = os.path.join(self.account_dir, "202504.beancount")
+        # Create an existing file with the proper Beansprout structure
+        existing_file = os.path.join(self.transactions_dir, "Assets", "Cash",
+                                     "Wallet", "202504.beancount")
+        os.makedirs(os.path.dirname(existing_file), exist_ok=True)
+
         with open(existing_file, "w") as f:
             f.write(";; -*- mode: beancount -*-\n")
             f.write("; Transactions for Assets:Cash:Wallet 202504\n\n")
@@ -294,8 +329,11 @@ class TestProcessor(unittest.TestCase):
             ],
         )
 
-        # Create an existing file
-        existing_file = os.path.join(self.account_dir, "202504.beancount")
+        # Create an existing file with the proper Beansprout structure
+        existing_file = os.path.join(self.transactions_dir, "Assets", "Cash",
+                                     "Wallet", "202504.beancount")
+        os.makedirs(os.path.dirname(existing_file), exist_ok=True)
+
         with open(existing_file, "w") as f:
             f.write(";; -*- mode: beancount -*-\n")
             f.write("; Transactions for Assets:Cash:Wallet 202504\n\n")

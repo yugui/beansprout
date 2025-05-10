@@ -92,6 +92,10 @@ class ModelTrainer(Processor):
         # Process all extracted entries
         for (account, year_month), entry_importer_pairs in sorted(
                 entries_by_account_month.items()):
+            # Get the destination file path using the helper method
+            dest_file = self.get_account_file_path(account, year_month)
+            existing_entries_in_dest = entries_by_dest_file.get(dest_file, [])
+
             for entry, importer in entry_importer_pairs:
                 total_entries += 1
 

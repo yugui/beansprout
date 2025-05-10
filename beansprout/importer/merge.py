@@ -59,6 +59,26 @@ class Processor(abc.ABC, Generic[ImporterType]):
         self.log = beangulp.utils.logger(-quiet, err=True)
         self.errors = beangulp.exceptions.ExceptionsTrap(self.log)
 
+    def get_account_file_path(self, account: str, year_month: str) -> str:
+        """Construct the file path for an account and year-month based on Beansprout directory structure.
+        
+        Args:
+            account: The account name, e.g., "Assets:Cash:Wallet".
+            year_month: The year and month in YYYYMM format.
+            
+        Returns:
+            The file path relative to the destination directory, e.g.,
+            "transactions/Assets/Cash/Wallet/202505.beancount".
+        """
+        # Split the account by colon to get the components
+        account_components = account.split(":")
+        # Create the path under the "transactions" directory
+        path_components = ["transactions"] + account_components
+        # Create the directory path
+        dir_path = os.path.join(self.destination, *path_components)
+        # Return the full file path
+        return os.path.join(dir_path, f"{year_month}.beancount")
+
     def process(self, src: List[str]) -> int:
         """Process source files and merge extracted transactions with existing files.
         
@@ -180,16 +200,16 @@ class Processor(abc.ABC, Generic[ImporterType]):
             # Find all beancount files with matching year-month in the destination directory
             existing_entries: Entries = []
 
-            for root, _, files in os.walk(self.destination):
-                for file in files:
-                    if file.endswith(".beancount") and file.startswith(
-                            year_month):
+            # Look for transactions directory at the root level
+            transactions_dir = os.path.join(self.destination, "transactions")
+            if os.path.exists(transactions_dir):
+                for root, dirs, files in os.walk(transactions_dir):
+                    for file in files:
                         existing_file = os.path.join(root, file)
                         try:
                             entries, _, _ = loader.load_file(existing_file)
 
                             # Store entries by file path for merging later
-                            # We'll use these entries if the file path matches our destination file
                             entries_by_dest_file[existing_file] = entries
 
                             # Add to the collection of all existing entries for deduplication
