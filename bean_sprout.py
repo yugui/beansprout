@@ -123,12 +123,11 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
 @click.argument('src',
                 nargs=-1,
                 type=click.Path(exists=True, resolve_path=True))
-@click.option(
-    '--destination',
-    '-o',
-    metavar='DIR',
-    type=click.Path(exists=True, file_okay=False, resolve_path=True),
-    help='The destination directory containing existing transactions.')
+@click.option('--ledger-directory',
+              '-d',
+              metavar='DIR',
+              type=click.Path(exists=True, file_okay=False, resolve_path=True),
+              help='The ledger directory containing existing transactions.')
 @click.option('--reverse',
               '-r',
               is_flag=True,
@@ -152,7 +151,7 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
     'Path to the account predictor model file. Defaults to the environment variable BEANGULP_ACCOUNT_PREDICTOR_PATH or ~/.cache/beangulp/account-prediction.pickle.'
 )
 @click.pass_obj
-def _train(ctx, src, destination, reverse, failfast, quiet, dry_run,
+def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
            model_path):
     """Train the account predictor model based on prediction failures.
 
@@ -187,7 +186,7 @@ def _train(ctx, src, destination, reverse, failfast, quiet, dry_run,
     processor = ModelTrainer(importers=ctx.importers,
                              account_predictor=account_predictor,
                              account_predictor_path=model_path,
-                             destination=destination,
+                             ledger_directory=ledger_directory,
                              reverse=reverse,
                              failfast=failfast,
                              quiet=quiet,
@@ -223,7 +222,8 @@ def _train(ctx, src, destination, reverse, failfast, quiet, dry_run,
               '-v',
               count=True,
               help='Print verbose information about the process.')
-@click.option('--dryrun',
+@click.option('--dry-run',
+              '-n',
               is_flag=True,
               help='Print extracted price entries without writing them.')
 @click.option(
@@ -233,7 +233,7 @@ def _train(ctx, src, destination, reverse, failfast, quiet, dry_run,
     default=os.getcwd(),
     help='Base directory for output files (default: current directory).')
 def _quote(filenames: List[str], date: Optional[datetime.datetime],
-           inactive: bool, custom_only: bool, verbose: int, dryrun: bool,
+           inactive: bool, custom_only: bool, verbose: int, dry_run: bool,
            destination: str) -> None:
     """Fetch price quotes for commodities using custom quoters.
     
@@ -331,7 +331,7 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     writer = QuoteWriter(destination_base=destination, verbose=verbose)
 
     # Write price entries to destination files or print them in dry run mode
-    if dryrun:
+    if dry_run:
         click.echo("Dry run - printing price entries:")
         for price in price_entries:
             click.echo(writer.format_price_for_display(price))

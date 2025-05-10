@@ -32,7 +32,7 @@ class ModelTrainer(Processor):
                  importers,
                  account_predictor,
                  account_predictor_path,
-                 destination=None,
+                 ledger_directory=None,
                  reverse=False,
                  failfast=False,
                  quiet=0,
@@ -43,13 +43,13 @@ class ModelTrainer(Processor):
             importers: List of importers to use for extracting transactions.
             account_predictor: The account predictor model to train.
             account_predictor_path: The path to save the updated model.
-            destination: The destination directory for extracted transactions.
+            ledger_directory: The ledger directory for extracted transactions.
             reverse: Whether to sort entries in reverse order.
             failfast: Whether to stop processing at the first error.
             quiet: Level of output suppression (0 for normal output, higher for less output).
             dry_run: Whether to perform a dry run without updating the model.
         """
-        super().__init__(importers, destination, reverse, failfast, quiet)
+        super().__init__(importers, ledger_directory, reverse, failfast, quiet)
         self.account_predictor = account_predictor
         self.account_predictor_path = account_predictor_path
         self.dry_run = dry_run
