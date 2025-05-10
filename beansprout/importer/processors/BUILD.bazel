@@ -1,0 +1,20 @@
+"""Build rules for the beansprout importers processors package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "processors",
+    srcs = [
+        "__init__.py",
+        "base.py",
+        "file_writer.py",
+        "model_trainer.py",
+    ],
+    deps = [
+        "//beansprout/importer:merge",
+        "@beansprout_deps//beancount",
+        "@beansprout_deps//beangulp",
+    ],
+)

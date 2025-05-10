@@ -34,6 +34,7 @@ py_library(
         ":merge",
         ":tokenizer",
         "//beansprout/importer/importers",
+        "//beansprout/importer/processors",
     ],
 )
 
