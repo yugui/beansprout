@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Unit tests for the MoneyForward ME importer."""
 
 import datetime
@@ -10,8 +11,8 @@ from unittest import mock
 from beancount.core import data
 from beancount.parser import cmptest
 
-from importers import moneyforward
-from importers.account_predictor import AccountPredictor
+from beansprout.importer.importers import moneyforward
+from beansprout.importer.account_predictor import AccountPredictor
 
 
 class TestMoneyForwardImporter(cmptest.TestCase):
@@ -163,7 +164,7 @@ class TestMoneyForwardImporter(cmptest.TestCase):
         meta['subcategory'] = '昼ご飯'
         meta['memo'] = 'メモ内容：同僚とランチ'
         meta['id'] = 'abcdef789012'
-        
+
         date = datetime.date(2025, 1, 20)
         txn = data.Transaction(
             meta=meta,
@@ -175,10 +176,11 @@ class TestMoneyForwardImporter(cmptest.TestCase):
             links=set(),
             postings=[],
         )
-        
+
         # Call the extract_prediction_data method
-        transaction_narration, posting_narration, hint = self.importer.extract_prediction_data(txn)
-        
+        transaction_narration, posting_narration, hint = self.importer.extract_prediction_data(
+            txn)
+
         # Verify the results
         self.assertEqual('メモ内容：同僚とランチ', transaction_narration)
         self.assertEqual('ナレーション：カフェでの支出', posting_narration)

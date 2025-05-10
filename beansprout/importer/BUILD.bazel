@@ -1,0 +1,63 @@
+"""Build rules for the beansprout importers package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "account_predictor",
+    srcs = ["account_predictor.py"],
+    deps = [
+        ":tokenizer",
+    ],
+)
+
+py_library(
+    name = "tokenizer",
+    srcs = ["tokenizer.py"],
+)
+
+py_library(
+    name = "merge",
+    srcs = ["merge.py"],
+    deps = [
+        "@beancount_deps//beancount",
+        "@beancount_deps//beangulp",
+    ],
+)
+
+py_library(
+    name = "importer",
+    srcs = ["__init__.py"],
+    deps = [
+        ":account_predictor",
+        ":merge",
+        ":tokenizer",
+        "//beansprout/importer/importers",
+    ],
+)
+
+py_test(
+    name = "account_predictor_test",
+    srcs = ["account_predictor_test.py"],
+    deps = [
+        ":account_predictor",
+    ],
+)
+
+py_test(
+    name = "merge_test",
+    srcs = ["merge_test.py"],
+    deps = [
+        ":merge",
+        "@beancount_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "tokenizer_test",
+    srcs = ["tokenizer_test.py"],
+    deps = [
+        ":tokenizer",
+    ],
+)

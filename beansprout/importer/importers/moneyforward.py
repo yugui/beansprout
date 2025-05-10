@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Importer for MoneyForward ME CSV files.
 
 This module provides a custom importer for MoneyForward ME CSV files that works with beangulp.
@@ -14,8 +15,8 @@ The importer successfully:
 
 Usage:
     ```python
-    from importers.moneyforward import Importer as MoneyForwardImporter
-    from importers.account_predictor import AccountPredictor
+    from beansprout.importer.importers.moneyforward import Importer as MoneyForwardImporter
+    from beansprout.importer.account_predictor import AccountPredictor
     
     # Create an account predictor
     predictor = AccountPredictor(
@@ -62,7 +63,7 @@ from beancount.core import data
 from beangulp import mimetypes
 from beangulp.importers import csvbase
 
-from importers.account_predictor import AccountPredictor
+from beansprout.importer.account_predictor import AccountPredictor
 
 
 class Importer(csvbase.Importer):
@@ -163,21 +164,21 @@ class Importer(csvbase.Importer):
                 expected_headers = r'"計算対象","日付","内容","金額（円）","保有金融機関","大項目","中項目","メモ","振替","ID"'
                 if header != expected_headers:
                     return False
-                
+
                 # Check that all records in the "保有金融機関" column match the expected institution
                 csv_reader = csv.reader(f)
                 for row in csv_reader:
                     if not row:  # Skip empty rows
                         continue
-                    
+
                     if len(row) < 5:  # Ensure we have enough columns
                         continue
-                    
+
                     # Check the "保有金融機関" column (index 4)
                     institution = row[4]
                     if institution != self.expected_institution:
                         return False
-                
+
                 return True
         except (UnicodeDecodeError, IOError):
             return False
@@ -267,8 +268,7 @@ class Importer(csvbase.Importer):
                 pass
         else:
             # Expense transaction
-            account = self._get_expense_account(row.category,
-                                                row.subcategory)
+            account = self._get_expense_account(row.category, row.subcategory)
             # Make the amount positive for the expense posting
             units = data.Amount(-amount_value, posting.units.currency)
 
@@ -324,7 +324,8 @@ class Importer(csvbase.Importer):
         # Return the default income account
         return self.default_income_account
 
-    def extract_prediction_data(self, directive: data.Directive) -> Tuple[str, str, List[str]]:
+    def extract_prediction_data(
+            self, directive: data.Directive) -> Tuple[str, str, List[str]]:
         """Extract transaction_narration, posting_narration, and hint from a beancount Directive.
         
         This method extracts the data needed for account prediction from a beancount Directive.
@@ -341,22 +342,23 @@ class Importer(csvbase.Importer):
         """
         # Extract metadata from the directive
         meta = directive.meta
-        
+
         # Extract transaction_narration (memo)
         transaction_narration = meta.get('memo', '')
-        
+
         # Extract posting_narration (narration)
-        posting_narration = directive.narration if hasattr(directive, 'narration') else ''
-        
+        posting_narration = directive.narration if hasattr(
+            directive, 'narration') else ''
+
         # Create hint from category and subcategory
         hint = []
         if 'category' in meta and meta['category']:
             hint.append(meta['category'])
         if 'subcategory' in meta and meta['subcategory']:
             hint.append(meta['subcategory'])
-            
+
         return transaction_narration, posting_narration, hint
-        
+
     def _guess_transfer_destination_account(self, category: str,
                                             subcategory: str, memo: str,
                                             notes: str) -> Optional[str]:

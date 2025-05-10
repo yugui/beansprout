@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Abstract processor for merging extracted transactions with existing files.
 
 This module provides an abstract base class for processing extracted transactions

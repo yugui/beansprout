@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Tokenizer for text processing in Beancount importers.
 
 This module provides a Tokenizer class that handles text tokenization with special

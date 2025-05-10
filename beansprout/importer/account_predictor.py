@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Account predictor for Beancount transactions.
 
 This module provides a supervised multi-class classification algorithm that
@@ -42,7 +43,7 @@ The implementation uses a Naive Bayes classifier with TF-IDF weighted features:
 # Usage Example
 
 ```python
-from importers.account_predictor import AccountPredictor
+from beansprout.importer.account_predictor import AccountPredictor
 
 # Create a predictor instance
 predictor = AccountPredictor(
@@ -82,7 +83,7 @@ import pickle
 import re
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Counter as CounterType
 
-from importers.tokenizer import Tokenizer
+from beansprout.importer.tokenizer import Tokenizer
 
 
 class TrainingData(NamedTuple):
@@ -443,7 +444,7 @@ class AccountPredictor:
         parent_dir = os.path.dirname(filepath)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
-            
+
         with open(filepath, 'wb') as f:
             pickle.dump(
                 {

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Unit tests for the merge module."""
 
 import os
@@ -11,7 +12,7 @@ from beancount.core import data
 from beancount.parser import printer
 from beancount import loader
 
-from importers.merge import Processor
+from beansprout.importer.merge import Processor
 
 
 class TestProcessor(unittest.TestCase):

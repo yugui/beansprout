@@ -15,7 +15,7 @@ py_binary(
         requirement("click"),
         requirement("beancount"),
         requirement("beangulp"),
-        "//importers",
+        "//beansprout/importer",
     ],
 )
 
@@ -50,7 +50,6 @@ py_package(
         "bean_gulp",
         "bean_price",
         "bean_quote",
-        "importers",
         "beansprout",
         "data",
     ],

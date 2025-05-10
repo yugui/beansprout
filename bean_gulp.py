@@ -10,9 +10,9 @@ from typing import Dict, List, Tuple
 from beancount import loader
 from beancount.parser import printer
 from beancount.core.data import Directive, Entries
-from importers.moneyforward import Importer as MoneyForwardImporter
-from importers.account_predictor import AccountPredictor
-from importers.merge import Processor, ImporterType
+from beansprout.importer.importers.moneyforward import Importer as MoneyForwardImporter
+from beansprout.importer.account_predictor import AccountPredictor
+from beansprout.importer.merge import Processor, ImporterType
 
 # Define static file paths for account mappings
 # Use absolute paths to ensure files are found regardless of working directory

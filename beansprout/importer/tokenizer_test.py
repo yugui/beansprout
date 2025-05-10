@@ -1,7 +1,8 @@
+#!/usr/bin/env python3
 """Unit tests for the Tokenizer class."""
 
 import unittest
-from importers.tokenizer import Tokenizer
+from beansprout.importer.tokenizer import Tokenizer
 
 
 class TokenizerTest(unittest.TestCase):

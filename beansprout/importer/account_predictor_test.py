@@ -1,11 +1,12 @@
+#!/usr/bin/env python3
 """Unit tests for the account predictor."""
 
 import os
 import tempfile
 import unittest
 
-from importers import account_predictor
-from importers.account_predictor import TrainingData
+from beansprout.importer import account_predictor
+from beansprout.importer.account_predictor import TrainingData
 
 
 class TestAccountPredictor(unittest.TestCase):
