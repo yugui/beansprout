@@ -21,8 +21,8 @@ py_library(
     name = "merge",
     srcs = ["merge.py"],
     deps = [
-        "@beancount_deps//beancount",
-        "@beancount_deps//beangulp",
+        "@beansprout_deps//beancount",
+        "@beansprout_deps//beangulp",
     ],
 )
 
@@ -50,7 +50,7 @@ py_test(
     srcs = ["merge_test.py"],
     deps = [
         ":merge",
-        "@beancount_deps//beancount",
+        "@beansprout_deps//beancount",
     ],
 )
 

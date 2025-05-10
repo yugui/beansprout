@@ -1,5 +1,5 @@
 module(
-    name = "beancount_project",
+    name = "beansprout",
     version = "0.1.0",
 )
 
@@ -15,8 +15,8 @@ use_repo(python, "python_3_11")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
-    hub_name = "beancount_deps",
+    hub_name = "beansprout_deps",
     python_version = "3.11",
     requirements_lock = "//third_party:requirements_lock.txt",
 )
-use_repo(pip, "beancount_deps")
+use_repo(pip, "beansprout_deps")

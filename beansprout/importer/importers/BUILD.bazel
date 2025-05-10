@@ -12,8 +12,8 @@ py_library(
     ],
     deps = [
         "//beansprout/importer:account_predictor",
-        "@beancount_deps//beancount",
-        "@beancount_deps//beangulp",
+        "@beansprout_deps//beancount",
+        "@beansprout_deps//beangulp",
     ],
 )
 
@@ -23,6 +23,6 @@ py_test(
     deps = [
         ":importers",
         "//beansprout/importer:account_predictor",
-        "@beancount_deps//beancount",
+        "@beansprout_deps//beancount",
     ],
 )

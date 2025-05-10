@@ -97,8 +97,8 @@ packages. You need to run `bazel run //third_party:requirements.update` to
 consistently update `requirements_lock.txt`.
 
 You can make sure that the dependencies are locally available by running
-`bazel build @beancount_deps//...`. Then, you will have the dependency
-packages resolved and downloaded in the `bazel-beancount/external/` directory.
+`bazel build @beansprout_deps//...`. Then, you will have the dependency
+packages resolved and downloaded in the `bazel-beansprout/external/` directory.
 The directory contains symlinks to the actual resolved package directories.
 Such symlinks are suffixed with `rules_python++` and contains the package
 name in the file names.

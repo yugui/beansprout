@@ -1,4 +1,4 @@
-load("@beancount_deps//:requirements.bzl", "requirement")
+load("@beansprout_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
@@ -63,7 +63,7 @@ py_package(
 # Wheel packaging rule
 py_wheel(
     name = "whl",
-    distribution = "beancount_tools",
+    distribution = "beansprout",
     entry_points = {
         "console_scripts": [
             "bean-gulp = bean_gulp:main",
