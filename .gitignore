@@ -1,1 +1,3 @@
 /bazel-*
+/memory-bank
+__pycache__
