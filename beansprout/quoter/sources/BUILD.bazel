@@ -36,3 +36,13 @@ py_test(
         requirement("beanprice"),
     ],
 )
+
+py_test(
+    name = "memory_cache_manager_test",
+    srcs = ["memory_cache_manager_test.py"],
+    deps = [
+        ":sources",
+        requirement("beancount"),
+        requirement("beanprice"),
+    ],
+)

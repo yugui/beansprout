@@ -8,14 +8,16 @@ directory.
 
 import datetime
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Iterable
 
 from beancount.core import data
-from beancount.core.data import Commodity, Price
+from beancount.core.data import Commodity, Price, Amount
+from beancount.core.number import Decimal
 from beanprice import source as beanprice_source
+from beanprice.source import SourcePrice
 
 # Import from the new location directly
-from beansprout.quoter.sources.dispatching import DispatchingSource
+from beansprout.quoter.sources.dispatching import SourceDispatcher
 from beansprout.quoter.sources import cache_manager
 
 
@@ -26,24 +28,26 @@ class QuoteFetcher:
     the source information specified in their price metadata. It can use both
     custom sources from the quoters directory and built-in sources from beanprice.
     
-    Internally, it uses the DispatchingSource to delegate price fetching to
+    Internally, it uses the SourceDispatcher to delegate price fetching to
     appropriate subsources.
     """
 
-    def __init__(self, custom_only: bool = False, cache_manager=None) -> None:
+    def __init__(self,
+                 cache_mgr: cache_manager.CacheManager,
+                 custom_only: bool = False) -> None:
         """Initialize the QuoteFetcher.
         
         Args:
+            cache_mgr: The cache manager to use for caching price quotes.
+                       If None, a MemoryCacheManager will be used.
             custom_only: If True, only use custom quoters from the beansprout.quoter.sources directory.
                          If False, also use built-in beanprice sources.
-            cache_manager: The cache manager to use for caching price quotes.
-                          If None, no caching is performed.
         """
         self.custom_only = custom_only
         self._logger = logging.getLogger(__name__)
-        # Create a DispatchingSource instance to handle source delegation
-        self._dispatch_source = DispatchingSource(custom_only=custom_only,
-                                                  cache_manager=cache_manager)
+        # Create a SourceDispatcher instance to handle source delegation
+        self._dispatch_source = SourceDispatcher(cache_manager=cache_mgr,
+                                                 custom_only=custom_only)
 
     def fetch_quote(self, commodity: Commodity,
                     quote_date: datetime.date) -> Optional[Price]:
@@ -60,33 +64,37 @@ class QuoteFetcher:
             return None
 
         try:
-            # Format the ticker for DispatchingSource
-            # The format is "COMMODITY:PRICE_META"
-            ticker = f"{commodity.currency}:{commodity.meta['price']}"
-
-            # Use DispatchingSource to get the price
+            # Use SourceDispatcher to get the prices
             if quote_date == datetime.date.today():
-                price_tuple = self._dispatch_source.get_latest_price(ticker)
+                prices = self._dispatch_source.get_latest_price(commodity)
             else:
-                price_tuple = self._dispatch_source.get_historical_price(
-                    ticker, quote_date)
+                # Convert date to datetime as required by the interface
+                dt = datetime.datetime.combine(quote_date, datetime.time())
+                prices = self._dispatch_source.get_historical_price(
+                    commodity, dt)
 
-            # If we got a price, create and return a Price directive
-            if price_tuple:
-                amount, price_date, currency = price_tuple
+            # If we got no prices, return None
+            prices_list = list(prices)
+            if not prices_list:
+                return None
 
-                # Create a metadata dictionary for the price entry
-                meta = {
-                    'filename': commodity.meta.get('filename', '<unknown>'),
-                    'lineno': commodity.meta.get('lineno', 0),
-                    'source': "dispatching"
-                }
+            # Use the first price in the list (for one commodity, there might be multiple prices in different currencies)
+            price = prices_list[0]
 
-                # Create and return the Price directive
-                return data.Price(meta=meta,
-                                  date=price_date,
-                                  currency=commodity.currency,
-                                  amount=amount)
+            # Create a metadata dictionary with additional information
+            meta = {
+                'filename': commodity.meta.get('filename', '<unknown>'),
+                'lineno': commodity.meta.get('lineno', 0),
+                'source': 'dispatching',
+            }
+            if price.meta:
+                meta.update(price.meta)
+
+            # Create and return the Price directive with all the necessary information
+            return data.Price(meta=meta,
+                              date=price.date,
+                              currency=price.currency,
+                              amount=price.amount)
         except Exception as e:
             self._logger.warning(
                 f"Error fetching quote for {commodity.currency}: {e}")

@@ -5,4 +5,14 @@ Each module should provide a Source class that implements the
 beanprice.source.Source interface.
 """
 
-__all__ = []
+from beansprout.quoter.sources.cache_manager import CacheManager
+from beansprout.quoter.sources.cache_manager import DBMCacheManager
+from beansprout.quoter.sources.cache_manager import MemoryCacheManager
+from beansprout.quoter.sources.cache_manager import NullCacheManager
+
+__all__ = [
+    'CacheManager',
+    'DBMCacheManager',
+    'NullCacheManager',
+    'MemoryCacheManager',
+]

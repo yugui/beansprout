@@ -106,10 +106,7 @@ class QuoteWriter:
 
                     for price in prices_list:
                         # Format price and normalize spaces
-                        formatted_price = ' '.join(
-                            part
-                            for part in printer.format_entry(price).split()
-                            if part)
+                        formatted_price = printer.format_entry(price).rstrip()
                         f.write(formatted_price)
                         f.write('\n')
 
@@ -120,20 +117,6 @@ class QuoteWriter:
                 )
 
         return written_files
-
-    def format_price_for_display(self, price: Price) -> str:
-        """Format a price entry for display or printing.
-        
-        Args:
-            price: The Price directive to format.
-            
-        Returns:
-            A string representation of the price.
-        """
-        # Use the Beancount printer, but clean up the extra spaces
-        formatted = printer.format_entry(price).rstrip()
-        # Replace multiple spaces with a single space to clean up the output
-        return ' '.join(part for part in formatted.split() if part)
 
     def get_destination_path(self, symbol: str, month_key: str) -> str:
         """Get the destination file path for a given commodity and month.

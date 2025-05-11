@@ -330,7 +330,7 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
             return cache
 
     with open_cache() as cache:
-        fetcher = QuoteFetcher(custom_only=custom_only, cache_manager=cache)
+        fetcher = QuoteFetcher(custom_only=custom_only, cache_mgr=cache)
 
         # Fetch quotes for each active commodity
         price_entries = []

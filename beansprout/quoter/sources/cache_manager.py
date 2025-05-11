@@ -11,6 +11,7 @@ import dbm  # Using the generic dbm instead of dbm.gnu for portability
 import logging
 import os
 import pickle
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple, TypeVar, Union
 
 # Type variables for better type hints
@@ -334,3 +335,158 @@ class NullCacheManager(CacheManager):
         """No-op for closing resources."""
         # No resources to close
         pass
+
+
+class MemoryCacheManager(CacheManager):
+    """Manages caching of price quotes using in-memory storage.
+    
+    This class provides in-memory caching of price quotes using an OrderedDict
+    as the underlying storage mechanism. It handles expiration based on TTL
+    and cache size limits. This implementation is suitable for short-lived
+    processes where persistence isn't required.
+    """
+
+    def __init__(self, ttl_seconds: int = 86400, max_entries: int = 10000):
+        """Initialize the memory cache manager.
+        
+        Args:
+            ttl_seconds: Time-to-live for cached entries in seconds. Default 24h.
+            max_entries: Maximum number of entries to store in the cache.
+        """
+        self.ttl_seconds = ttl_seconds
+        self.max_entries = max_entries
+
+        # Use OrderedDict to maintain insertion order for LRU eviction
+        self._cache = OrderedDict()
+        self._stats = {'hits': 0, 'misses': 0}
+
+    def get(self, ticker: str, base_ticker: str,
+            date: datetime.date) -> Optional[Any]:
+        """Retrieve a cached quote if available and not expired.
+        
+        Args:
+            ticker: The ticker symbol of the quote
+            base_ticker: The base ticker (currency) of the quote
+            date: Date of the quote
+            
+        Returns:
+            Quote object if found and valid, None otherwise.
+        """
+        key = self._get_cache_key(ticker, base_ticker, date)
+
+        try:
+            if key in self._cache:
+                timestamp, quote_data = self._cache[key]
+
+                # Check if entry is expired
+                if not self._is_expired(timestamp):
+                    # Move item to the end (most recently used)
+                    # This helps with LRU eviction policy
+                    self._cache.move_to_end(key, last=True)
+
+                    logging.debug("Cache hit for key %s", key)
+                    self._stats['hits'] += 1
+                    return quote_data
+                else:
+                    # Entry expired, remove it and count as a miss
+                    del self._cache[key]
+                    logging.debug("Cache miss (expired) for key %s", key)
+                    self._stats['misses'] += 1
+                    return None
+
+            # Key not found
+            logging.debug("Cache miss (not found) for key %s", key)
+            self._stats['misses'] += 1
+            return None
+        except Exception as e:
+            # Log but don't fail on cache errors
+            logging.warning("Error retrieving from memory cache: %s", str(e))
+            self._stats['misses'] += 1
+            return None
+
+    def put(self, ticker: str, base_ticker: str, date: datetime.date,
+            quote_result: Any) -> None:
+        """Store a quote result in the cache.
+        
+        Args:
+            ticker: The ticker symbol
+            base_ticker: The base ticker (currency)
+            date: Date of the quote
+            quote_result: The quote result to cache
+        """
+        key = self._get_cache_key(ticker, base_ticker, date)
+
+        try:
+            # Create cache entry with current timestamp
+            timestamp = datetime.datetime.now().timestamp()
+
+            # Check if we need to enforce size limit before adding
+            self._enforce_size_limit()
+
+            # Store in memory cache
+            self._cache[key] = (timestamp, quote_result)
+
+            # Move to end (most recently used)
+            self._cache.move_to_end(key, last=True)
+        except Exception as e:
+            # Log but don't fail on cache errors
+            logging.warning("Error storing in memory cache: %s", str(e))
+
+    def _get_cache_key(self, ticker: str, base_ticker: str,
+                       date: datetime.date) -> str:
+        """Generate a cache key from the quote parameters.
+        
+        Args:
+            ticker: The ticker symbol
+            base_ticker: The base ticker (currency)
+            date: The date of the quote
+            
+        Returns:
+            String key in format 'TICKER:BASE:YYYY-MM-DD'
+        """
+        return f"{ticker}:{base_ticker}:{date.isoformat()}"
+
+    def _is_expired(self, timestamp: float) -> bool:
+        """Check if a cached entry is expired based on TTL.
+        
+        Args:
+            timestamp: The timestamp when the entry was cached
+            
+        Returns:
+            True if the entry is expired, False otherwise
+        """
+        current_time = datetime.datetime.now().timestamp()
+        return (current_time - timestamp) > self.ttl_seconds
+
+    def _enforce_size_limit(self) -> None:
+        """Remove oldest entries if cache exceeds size limit."""
+        try:
+            # Since we're using OrderedDict with move_to_end,
+            # the oldest entries are at the beginning
+            while len(self._cache) >= self.max_entries:
+                # Remove oldest item (first item in OrderedDict)
+                self._cache.popitem(last=False)
+                logging.debug(
+                    "Removed oldest entry from memory cache to enforce size limit"
+                )
+        except Exception as e:
+            logging.warning("Error enforcing memory cache size limit: %s",
+                            str(e))
+
+    def get_stats(self) -> Dict[str, Union[int, float]]:
+        """Return cache statistics.
+        
+        Returns:
+            Dictionary containing hit/miss statistics
+        """
+        stats = dict(self._stats)
+        total = stats['hits'] + stats['misses']
+        stats['hit_ratio'] = stats['hits'] / total if total > 0 else 0
+        return stats
+
+    def close(self) -> None:
+        """Clear the memory cache."""
+        try:
+            self._cache.clear()
+        except Exception as e:
+            logging.warning("Error closing memory cache: %s", str(e))

@@ -1,566 +1,926 @@
 #!/usr/bin/env python3
-"""Unit tests for the DispatchingSource class."""
+"""Tests for the SourceDispatcher class."""
 
-import unittest
 import datetime
+import unittest
 from decimal import Decimal
 from unittest import mock
-from typing import Optional, Tuple, List, Iterable
 
-from beancount.core.data import Commodity
+from beancount.core.data import Commodity, Price, Amount
+from beanprice.source import Source as SourceBase, SourcePrice
 
-from beansprout.quoter.sources.dispatching import DispatchingSource, Source, PriceSource
+from beansprout.quoter.sources.dispatching import SourceDispatcher, SourceSpec, get_source
 from beansprout.quoter.sources import cache_manager
 
 
-class MockSource:
-    """Mock source for testing the DispatchingSource."""
+class MockSource(SourceBase):
+    """Mock source for testing."""
 
-    def __init__(self,
-                 test_case,
-                 latest_result=None,
-                 historical_result=None,
-                 series_result=None):
-        self.test_case = test_case
-        self.latest_result = latest_result
-        self.historical_result = historical_result
-        self.series_result = series_result
-        self.get_latest_called = False
-        self.get_historical_called = False
-        self.get_series_called = False
+    def __init__(self, response=None, raises=False):
+        self.response = response
+        self.raises = raises
+        self.calls = []
 
-    def get_latest_price(
-            self, ticker: str) -> Optional[Tuple[Decimal, datetime.date, str]]:
-        self.get_latest_called = True
-        self.test_case.latest_ticker = ticker
-        return self.latest_result
+    def get_latest_price(self, ticker):
+        """Return a test price."""
+        self.calls.append(('get_latest_price', ticker))
+        if self.raises:
+            raise Exception("Test exception")
+        return self.response
 
-    def get_historical_price(
-            self, ticker: str, time: datetime.date
-    ) -> Optional[Tuple[Decimal, datetime.date, str]]:
-        self.get_historical_called = True
-        self.test_case.historical_ticker = ticker
-        self.test_case.historical_time = time
-        return self.historical_result
+    def get_historical_price(self, ticker, time):
+        """Return a test historical price."""
+        self.calls.append(('get_historical_price', ticker, time))
+        if self.raises:
+            raise Exception("Test exception")
+        return self.response
 
-    def get_prices_series(
-        self, ticker: str, time_begin: datetime.date, time_end: datetime.date
-    ) -> Optional[Iterable[Tuple[datetime.date, Decimal, str]]]:
-        self.get_series_called = True
-        self.test_case.series_ticker = ticker
-        self.test_case.series_time_begin = time_begin
-        self.test_case.series_time_end = time_end
-        return self.series_result
+    def get_prices_series(self, ticker, time_begin, time_end):
+        """Return a test price series."""
+        self.calls.append(('get_prices_series', ticker, time_begin, time_end))
+        if self.raises:
+            raise Exception("Test exception")
+        return self.response
 
 
-class TestDispatchingSource(unittest.TestCase):
-    """Test the DispatchingSource class."""
+class TestSourceDispatcher(unittest.TestCase):
+    """Tests for the SourceDispatcher class."""
 
     def setUp(self):
-        """Set up the test case."""
-        self.source = DispatchingSource()
+        """Set up test fixtures."""
+        # Create mock cache manager
+        self.mock_cache = mock.MagicMock(spec=cache_manager.CacheManager)
+        self.mock_cache.get.return_value = None  # Default to cache miss
+
+        # Create the dispatching source with the mock cache
+        self.source = SourceDispatcher(cache_manager=self.mock_cache,
+                                       custom_only=True)
+
+        # Create some test commodities
+        self.apple = Commodity(meta={
+            'filename': 'test',
+            'lineno': 1,
+            'price': 'USD:yahoo/AAPL'
+        },
+                               date=datetime.date(2025, 5, 8),
+                               currency='AAPL')
+
+        self.bitcoin = Commodity(meta={
+            'filename': 'test',
+            'lineno': 2,
+            'price': 'USD:coinbase/BTC,coinmarketcap/BTC'
+        },
+                                 date=datetime.date(2025, 5, 8),
+                                 currency='BTC')
+
+        self.cad = Commodity(meta={
+            'filename': 'test',
+            'lineno': 3,
+            'price': 'USD:yahoo/^CADUSD=X'
+        },
+                             date=datetime.date(2025, 5, 8),
+                             currency='CAD')
+
+        self.multi_currency = Commodity(meta={
+            'filename':
+            'test',
+            'lineno':
+            4,
+            'price':
+            'USD:yahoo/MSFT JPY:yahoo/MSFT.T'
+        },
+                                        date=datetime.date(2025, 5, 8),
+                                        currency='MSFT')
+
+        self.no_price_meta = Commodity(meta={
+            'filename': 'test',
+            'lineno': 5
+        },
+                                       date=datetime.date(2025, 5, 8),
+                                       currency='XYZ')
+
+        # Current date for testing
         self.today = datetime.date.today()
-        self.yesterday = self.today - datetime.timedelta(days=1)
-        self.latest_ticker = None
-        self.historical_ticker = None
-        self.historical_time = None
-        self.series_ticker = None
-        self.series_time_begin = None
-        self.series_time_end = None
 
-    def test_get_price_sources(self):
-        """Test extracting price sources from commodity metadata."""
-        # Test with a simple price source
-        simple_commodity = Commodity(meta={'price': 'USD:yahoo/AAPL'},
-                                     date=self.today,
-                                     currency='AAPL')
-        price_sources = self.source._get_price_sources(simple_commodity)
-        self.assertEqual(len(price_sources), 1)
-        self.assertEqual(price_sources[0].currency, "USD")
-        self.assertEqual(price_sources[0].source, "yahoo")
-        self.assertEqual(price_sources[0].ticker, "AAPL")
+    def test_get_source_specs(self):
+        """Test parsing of price metadata into source specifications."""
+        # Test normal case
+        specs = self.source._get_source_specs(self.apple)
+        self.assertIn('USD', specs)
+        self.assertEqual(1, len(specs['USD']))
+        self.assertEqual(SourceSpec('USD', 'yahoo', 'AAPL', False),
+                         specs['USD'][0])
 
-        # Test with multiple price sources
-        multi_commodity = Commodity(
-            meta={'price': 'USD:yahoo/AAPL CAD:yahoo/AAPL.TO'},
-            date=self.today,
-            currency='AAPL')
-        price_sources = self.source._get_price_sources(multi_commodity)
-        self.assertEqual(len(price_sources), 2)
-        self.assertEqual(price_sources[0].currency, "USD")
-        self.assertEqual(price_sources[0].source, "yahoo")
-        self.assertEqual(price_sources[0].ticker, "AAPL")
-        self.assertEqual(price_sources[1].currency, "CAD")
-        self.assertEqual(price_sources[1].source, "yahoo")
-        self.assertEqual(price_sources[1].ticker, "AAPL.TO")
+        # Test multiple sources for same currency
+        specs = self.source._get_source_specs(self.bitcoin)
+        self.assertIn('USD', specs)
+        self.assertEqual(2, len(specs['USD']))
+        self.assertEqual(SourceSpec('USD', 'coinbase', 'BTC', False),
+                         specs['USD'][0])
+        self.assertEqual(SourceSpec('USD', 'coinmarketcap', 'BTC', False),
+                         specs['USD'][1])
 
-        # Test with fallback sources
-        fallback_commodity = Commodity(
-            meta={'price': 'USD:source1/BTC,source2/BTC'},
-            date=self.today,
-            currency='BTC')
-        price_sources = self.source._get_price_sources(fallback_commodity)
-        self.assertEqual(len(price_sources), 2)
-        self.assertEqual(price_sources[0].currency, "USD")
-        self.assertEqual(price_sources[0].source, "source1")
-        self.assertEqual(price_sources[0].ticker, "BTC")
-        self.assertEqual(price_sources[1].currency, "USD")
-        self.assertEqual(price_sources[1].source, "source2")
-        self.assertEqual(price_sources[1].ticker, "BTC")
+        # Test inversion notation
+        specs = self.source._get_source_specs(self.cad)
+        self.assertIn('USD', specs)
+        self.assertEqual(1, len(specs['USD']))
+        self.assertEqual(SourceSpec('USD', 'yahoo', 'CADUSD=X', True),
+                         specs['USD'][0])
 
-    def test_get_price_sources_with_inversion(self):
-        """Test extracting price sources with inversion notation from commodity metadata."""
-        # Test with inversion notation
-        inversion_commodity = Commodity(meta={'price': 'USD:yahoo/^CADUSD=X'},
-                                        date=self.today,
-                                        currency='CAD')
-        price_sources = self.source._get_price_sources(inversion_commodity)
-        self.assertEqual(len(price_sources), 1)
-        self.assertEqual(price_sources[0].currency, "USD")
-        self.assertEqual(price_sources[0].source, "yahoo")
-        self.assertEqual(price_sources[0].ticker, "CADUSD=X")
-        self.assertTrue(price_sources[0].invert)
+        # Test multiple currencies
+        specs = self.source._get_source_specs(self.multi_currency)
+        self.assertIn('USD', specs)
+        self.assertIn('JPY', specs)
+        self.assertEqual(1, len(specs['USD']))
+        self.assertEqual(1, len(specs['JPY']))
+        self.assertEqual(SourceSpec('USD', 'yahoo', 'MSFT', False),
+                         specs['USD'][0])
+        self.assertEqual(SourceSpec('JPY', 'yahoo', 'MSFT.T', False),
+                         specs['JPY'][0])
 
-        # Test with non-inversion ticker
-        normal_commodity = Commodity(meta={'price': 'USD:yahoo/AAPL'},
-                                     date=self.today,
-                                     currency='AAPL')
-        price_sources = self.source._get_price_sources(normal_commodity)
-        self.assertEqual(len(price_sources), 1)
-        self.assertEqual(price_sources[0].currency, "USD")
-        self.assertEqual(price_sources[0].source, "yahoo")
-        self.assertEqual(price_sources[0].ticker, "AAPL")
-        self.assertFalse(price_sources[0].invert)
-
-        # Test with mixed inversion and non-inversion
-        mixed_commodity = Commodity(
-            meta={'price': 'USD:yahoo/^CADUSD=X CAD:yahoo/AAPL.TO'},
-            date=self.today,
-            currency='CAD')
-        price_sources = self.source._get_price_sources(mixed_commodity)
-        self.assertEqual(len(price_sources), 2)
-        self.assertEqual(price_sources[0].currency, "USD")
-        self.assertEqual(price_sources[0].source, "yahoo")
-        self.assertEqual(price_sources[0].ticker, "CADUSD=X")
-        self.assertTrue(price_sources[0].invert)
-        self.assertEqual(price_sources[1].currency, "CAD")
-        self.assertEqual(price_sources[1].source, "yahoo")
-        self.assertEqual(price_sources[1].ticker, "AAPL.TO")
-        self.assertFalse(price_sources[1].invert)
+        # Test no price metadata
+        specs = self.source._get_source_specs(self.no_price_meta)
+        self.assertEqual({}, specs)
 
     @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_latest_price(self, mock_get_source):
-        """Test getting the latest price."""
-        # Set up the mock source
-        mock_source = MockSource(self,
-                                 latest_result=(Decimal('150.00'), self.today,
-                                                'USD'))
+    def test_get_latest_price_cached(self, mock_get_source):
+        """Test fetching a price that is already in the cache."""
+        # Set up the mock cache to return a cached result
+        cached_price = Price(meta={'source': 'cache'},
+                             date=self.today,
+                             currency='AAPL',
+                             amount=Amount(number=Decimal('150.00'),
+                                           currency='USD'))
+        self.mock_cache.get.return_value = cached_price
+
+        # Call the method
+        prices = list(self.source.get_latest_price(self.apple))
+
+        # Verify that get_source was not called
+        mock_get_source.assert_not_called()
+
+        # Verify we got the cached result
+        self.assertEqual(1, len(prices))
+        self.assertEqual(cached_price, prices[0])
+
+        # Verify cache was checked with correct parameters
+        self.mock_cache.get.assert_called_once_with('USD', 'AAPL', self.today)
+        self.mock_cache.put.assert_not_called()
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_latest_price_source_success(self, mock_get_source):
+        """Test fetching a price from a source (not cached)."""
+        # Set up the mock source to return a price
+        mock_source = MockSource(
+            response=SourcePrice(price=Decimal('160.00'),
+                                 time=datetime.datetime.now(),
+                                 quote_currency='USD'))
         mock_get_source.return_value = mock_source
 
-        # Test getting the latest price
-        result = self.source.get_latest_price('AAPL:USD:yahoo/AAPL')
+        # Call the method
+        prices = list(self.source.get_latest_price(self.apple))
 
-        # Verify results
-        self.assertEqual(result, (Decimal('150.00'), self.today, 'USD'))
-        self.assertEqual(self.latest_ticker, 'AAPL')
-        self.assertTrue(mock_source.get_latest_called)
+        # Verify that get_source was called with the right parameter
         mock_get_source.assert_called_once_with(source_name='yahoo',
-                                                custom_only=False)
+                                                custom_only=True)
+
+        # Verify we got a price
+        self.assertEqual(1, len(prices))
+        price = prices[0]
+        self.assertEqual('AAPL', price.currency)
+        self.assertEqual('USD', price.amount.currency)
+        self.assertEqual(Decimal('160.00'), price.amount.number)
+        self.assertEqual(self.today, price.date)
+        self.assertEqual('yahoo', price.meta['source'])
+
+        # Verify cache was checked and updated
+        self.mock_cache.get.assert_called_once_with('USD', 'AAPL', self.today)
+        self.mock_cache.put.assert_called_once()
+        self.assertEqual('USD', self.mock_cache.put.call_args[0][0])
+        self.assertEqual('AAPL', self.mock_cache.put.call_args[0][1])
+        self.assertEqual(self.today, self.mock_cache.put.call_args[0][2])
+        self.assertEqual(price, self.mock_cache.put.call_args[0][3])
+
+    @mock.patch(
+        'beansprout.quoter.sources.dispatching.SourceDispatcher._try_sources')
+    def test_get_latest_price_inversion(self, mock_try_sources):
+        """Test price inversion when the invert flag is True."""
+        # Mock the _try_sources method directly with a response that indicates source_spec.invert = True
+        mock_try_sources.return_value = (SourceSpec(quote_currency='USD',
+                                                    source='yahoo',
+                                                    ticker='CADUSD=X',
+                                                    invert=True),
+                                         SourcePrice(
+                                             price=Decimal('1.25'),
+                                             time=datetime.datetime.now(),
+                                             quote_currency='USD'))
+
+        # Call the method with a commodity that has inversion notation
+        prices = list(self.source.get_latest_price(self.cad))
+
+        # Verify we got one price
+        self.assertEqual(1, len(prices))
+        price = prices[0]
+
+        self.assertEqual('USD', price.currency)
+        self.assertEqual('CAD', price.amount.currency)
+
+        # The price should be inverted (1/1.25 = 0.8)
+        expected = Decimal('1') / Decimal('1.25')
+        self.assertAlmostEqual(float(expected),
+                               float(price.amount.number),
+                               places=6)
+
+        self.assertEqual(self.today, price.date)
+        self.assertEqual('yahoo', price.meta['source'])
 
     @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_latest_price_with_fallbacks(self, mock_get_source):
-        """Test getting the latest price with fallback sources."""
-        # First source returns None
-        first_mock_source = MockSource(self, latest_result=None)
-        # Second source returns a price
-        second_mock_source = MockSource(self,
-                                        latest_result=(Decimal('45000.00'),
-                                                       self.today, 'USD'))
+    def test_get_latest_price_source_fallback(self, mock_get_source):
+        """Test falling back to the second source when the first fails."""
+        # Set up mock sources - first fails, second succeeds
+        failing_source = MockSource(response=None)
+        successful_source = MockSource(
+            response=SourcePrice(price=Decimal('50000.00'),
+                                 time=datetime.datetime.now(),
+                                 quote_currency='USD'))
 
-        # Configure mock_get_source to return different values based on input
+        # Configure get_source to return different sources based on name
         def side_effect(source_name, custom_only):
-            if source_name == 'source1':
-                return first_mock_source
-            elif source_name == 'source2':
-                return second_mock_source
+            if source_name == 'coinbase':
+                return failing_source
+            elif source_name == 'coinmarketcap':
+                return successful_source
             return None
 
         mock_get_source.side_effect = side_effect
 
-        # Test getting the latest price
-        result = self.source.get_latest_price(
-            'BTC:USD:source1/BTC,source2/BTC')
+        # Call the method with a commodity that has multiple sources
+        prices = list(self.source.get_latest_price(self.bitcoin))
 
-        # Verify results
-        self.assertEqual(result, (Decimal('45000.00'), self.today, 'USD'))
-        self.assertTrue(first_mock_source.get_latest_called)
-        self.assertTrue(second_mock_source.get_latest_called)
-        self.assertEqual(mock_get_source.call_count, 2)
+        # Verify both sources were tried
+        self.assertEqual(2, mock_get_source.call_count)
+        mock_get_source.assert_any_call(source_name='coinbase',
+                                        custom_only=True)
+        mock_get_source.assert_any_call(source_name='coinmarketcap',
+                                        custom_only=True)
+
+        # Verify we got a price from the second source
+        self.assertEqual(1, len(prices))
+        price = prices[0]
+        self.assertEqual('BTC', price.currency)
+        self.assertEqual('USD', price.amount.currency)
+        self.assertEqual(Decimal('50000.00'), price.amount.number)
+        self.assertEqual('coinmarketcap', price.meta['source'])
 
     @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_latest_price_with_inversion(self, mock_get_source):
-        """Test getting the latest price with inversion notation."""
-        # Set up the mock source with a price of 0.75 CAD per USD
-        mock_source = MockSource(self,
-                                 latest_result=(Decimal('0.75'), self.today,
-                                                'USD'))
+    def test_get_latest_price_all_sources_fail(self, mock_get_source):
+        """Test behavior when all sources fail to return a price."""
+        # Set up mock source to return None
+        mock_source = MockSource(response=None)
         mock_get_source.return_value = mock_source
 
-        # Test getting the latest price with inversion
-        # This should invert 0.75 to get 1.33333... USD per CAD
-        result = self.source.get_latest_price('CAD:USD:yahoo/^CADUSD=X')
+        # Call the method
+        prices = list(self.source.get_latest_price(self.apple))
 
-        # Verify results - price should be inverted (1/0.75 = 1.33333...)
-        self.assertEqual(result[0], Decimal('1') / Decimal('0.75'))
-        self.assertEqual(result[1], self.today)
-        self.assertEqual(result[2], 'USD')
-        self.assertEqual(self.latest_ticker,
-                         'CADUSD=X')  # Ticker should have ^ removed
-        self.assertTrue(mock_source.get_latest_called)
+        # Verify that get_source was called
         mock_get_source.assert_called_once_with(source_name='yahoo',
-                                                custom_only=False)
+                                                custom_only=True)
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was checked but not updated
+        self.mock_cache.get.assert_called_once()
+        self.mock_cache.put.assert_not_called()
 
     @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_historical_price(self, mock_get_source):
-        """Test getting a historical price."""
-        # Set up the mock source
-        mock_source = MockSource(self,
-                                 historical_result=(Decimal('145.00'),
-                                                    self.yesterday, 'USD'))
+    def test_get_latest_price_source_exception(self, mock_get_source):
+        """Test handling of exceptions from sources."""
+        # Set up mock source to raise an exception
+        mock_source = MockSource(raises=True)
         mock_get_source.return_value = mock_source
 
-        # Test getting the historical price
-        result = self.source.get_historical_price('AAPL:USD:yahoo/AAPL',
-                                                  self.yesterday)
+        # Call the method - should not raise an exception
+        prices = list(self.source.get_latest_price(self.apple))
 
-        # Verify results
-        self.assertEqual(result, (Decimal('145.00'), self.yesterday, 'USD'))
-        self.assertEqual(self.historical_ticker, 'AAPL')
-        self.assertEqual(self.historical_time, self.yesterday)
-        self.assertTrue(mock_source.get_historical_called)
-        mock_get_source.assert_called_once_with(source_name='yahoo',
-                                                custom_only=False)
+        # Verify that get_source was called
+        mock_get_source.assert_called_once()
 
-    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_historical_price_with_inversion(self, mock_get_source):
-        """Test getting a historical price with inversion notation."""
-        # Set up the mock source with a historical price of 0.78 CAD per USD
-        mock_source = MockSource(self,
-                                 historical_result=(Decimal('0.78'),
-                                                    self.yesterday, 'USD'))
-        mock_get_source.return_value = mock_source
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
 
-        # Test getting the historical price with inversion
-        # This should invert 0.78 to get 1.28205... USD per CAD
-        result = self.source.get_historical_price('CAD:USD:yahoo/^CADUSD=X',
-                                                  self.yesterday)
+        # Verify cache was checked but not updated
+        self.mock_cache.get.assert_called_once()
+        self.mock_cache.put.assert_not_called()
 
-        # Verify results - price should be inverted (1/0.78 = 1.28205...)
-        self.assertEqual(result[0], Decimal('1') / Decimal('0.78'))
-        self.assertEqual(result[1], self.yesterday)
-        self.assertEqual(result[2], 'USD')
-        self.assertEqual(self.historical_ticker, 'CADUSD=X')
-        self.assertEqual(self.historical_time, self.yesterday)
-        self.assertTrue(mock_source.get_historical_called)
-        mock_get_source.assert_called_once_with(source_name='yahoo',
-                                                custom_only=False)
+    def test_get_latest_price_no_price_metadata(self):
+        """Test fetching a price for a commodity with no price metadata."""
+        # Call the method with a commodity that has no price metadata
+        prices = list(self.source.get_latest_price(self.no_price_meta))
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was not checked or updated
+        self.mock_cache.get.assert_not_called()
+        self.mock_cache.put.assert_not_called()
 
     @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_prices_series(self, mock_get_source):
-        """Test getting a price series."""
-        # Set up the mock source
-        start_date = self.today - datetime.timedelta(days=5)
-        end_date = self.today
-        series_data = [
-            (start_date, Decimal('140.00'), 'USD'),
-            (start_date + datetime.timedelta(days=1), Decimal('142.00'),
-             'USD'),
-            (start_date + datetime.timedelta(days=2), Decimal('145.00'),
-             'USD'),
-            (end_date, Decimal('150.00'), 'USD'),
-        ]
+    def test_get_latest_price_multiple_currencies(self, mock_get_source):
+        """Test fetching prices in multiple currencies for a single commodity."""
 
-        mock_source = MockSource(self, series_result=series_data)
-        mock_get_source.return_value = mock_source
-
-        # Test getting the price series
-        result = self.source.get_prices_series('AAPL:USD:yahoo/AAPL',
-                                               start_date, end_date)
-
-        # Convert result to list for comparison
-        result_list = list(result)
-
-        # Verify results
-        self.assertEqual(len(result_list), 4)
-        self.assertEqual(result_list[0],
-                         (start_date, Decimal('140.00'), 'USD'))
-        self.assertEqual(result_list[-1], (end_date, Decimal('150.00'), 'USD'))
-        self.assertEqual(self.series_ticker, 'AAPL')
-        self.assertEqual(self.series_time_begin, start_date)
-        self.assertEqual(self.series_time_end, end_date)
-        self.assertTrue(mock_source.get_series_called)
-        mock_get_source.assert_called_once_with(source_name='yahoo',
-                                                custom_only=False)
-
-    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_prices_series_with_inversion(self, mock_get_source):
-        """Test getting a price series with inversion notation."""
-        # Set up the mock source with a series of prices
-        series_data = [(self.yesterday, Decimal('0.76'), 'USD'),
-                       (self.today, Decimal('0.75'), 'USD')]
-        mock_source = MockSource(self, series_result=series_data)
-        mock_get_source.return_value = mock_source
-
-        # Test getting the price series with inversion
-        result = self.source.get_prices_series('CAD:USD:yahoo/^CADUSD=X',
-                                               self.yesterday, self.today)
-
-        # Convert result to list for easier assertion
-        result_list = list(result)
-
-        # Verify results - prices should be inverted
-        self.assertEqual(len(result_list), 2)
-        # Check first entry: (1/0.76 = 1.31578...)
-        self.assertEqual(result_list[0][0], self.yesterday)
-        self.assertEqual(result_list[0][1], Decimal('1') / Decimal('0.76'))
-        self.assertEqual(result_list[0][2], 'USD')
-        # Check second entry: (1/0.75 = 1.33333...)
-        self.assertEqual(result_list[1][0], self.today)
-        self.assertEqual(result_list[1][1], Decimal('1') / Decimal('0.75'))
-        self.assertEqual(result_list[1][2], 'USD')
-
-        self.assertEqual(self.series_ticker, 'CADUSD=X')
-        self.assertEqual(self.series_time_begin, self.yesterday)
-        self.assertEqual(self.series_time_end, self.today)
-        self.assertTrue(mock_source.get_series_called)
-        mock_get_source.assert_called_once_with(source_name='yahoo',
-                                                custom_only=False)
-
-    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_invalid_ticker_format(self, mock_get_source):
-        """Test handling of invalid ticker formats."""
-        # Test with an invalid ticker (missing colon)
-        result = self.source.get_latest_price('AAPL')
-        self.assertIsNone(result)
-        mock_get_source.assert_not_called()
-
-        # Test with an invalid ticker (no source/ticker)
-        result = self.source.get_latest_price('AAPL:USD')
-        self.assertIsNone(result)
-        mock_get_source.assert_not_called()
-
-    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_source_not_found(self, mock_get_source):
-        """Test handling when a source is not found."""
-        mock_get_source.return_value = None
-
-        # Test getting the latest price
-        result = self.source.get_latest_price('AAPL:USD:unknown/AAPL')
-
-        # Verify results
-        self.assertIsNone(result)
-        mock_get_source.assert_called_once_with(source_name='unknown',
-                                                custom_only=False)
-
-    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
-    def test_get_latest_price_with_zero_inversion(self, mock_get_source):
-        """Test getting the latest price with inversion when value is zero."""
-        # Set up the mock source with a price of 0.0
-        mock_source = MockSource(self,
-                                 latest_result=(Decimal('0.0'), self.today,
-                                                'USD'))
-        mock_get_source.return_value = mock_source
-
-        # Test getting the latest price with inversion on zero value
-        # This should skip the source as we can't invert zero
-        result = self.source.get_latest_price('CAD:USD:yahoo/^CADUSD=X')
-
-        # Verify results - no result should be returned as we can't invert 0
-        self.assertIsNone(result)
-        self.assertEqual(self.latest_ticker, 'CADUSD=X')
-        self.assertTrue(mock_source.get_latest_called)
-
-    def test_multiple_sources_fallback(self):
-        """Test that the source tries multiple sources in order and uses the first successful one."""
-        # First source returns None
-        first_mock_source = mock.MagicMock()
-        first_mock_source.get_latest_price.return_value = None
-
-        # Second source returns a price
-        second_mock_source = mock.MagicMock()
-        second_mock_source.get_latest_price.return_value = (Decimal('150.00'),
-                                                            self.today, 'USD')
-
-        # Setup _get_or_create_source to return different sources based on source name
-        def side_effect(source_name):
-            if source_name == 'source1':
-                return first_mock_source
-            elif source_name == 'source2':
-                return second_mock_source
+        # Set up the mock source to return different prices for different currencies
+        def side_effect(ticker):
+            if ticker == 'MSFT':
+                return SourcePrice(price=Decimal('300.00'),
+                                   time=datetime.datetime.now(),
+                                   quote_currency='USD')
+            elif ticker == 'MSFT.T':
+                return SourcePrice(price=Decimal('45000.00'),
+                                   time=datetime.datetime.now(),
+                                   quote_currency='JPY')
             return None
 
-        with mock.patch.object(self.source,
-                               '_get_or_create_source',
-                               side_effect=side_effect):
-            # Test with multiple sources specified in the ticker string
-            result = self.source.get_latest_price(
-                'STOCK:USD:source1/AAPL,source2/AAPL')
+        mock_source = MockSource()
+        mock_source.get_latest_price = side_effect
+        mock_get_source.return_value = mock_source
 
-            # Verify we got a result from the second source
-            self.assertEqual(result, (Decimal('150.00'), self.today, 'USD'))
+        # Call the method with a commodity that has multiple currencies
+        prices = list(self.source.get_latest_price(self.multi_currency))
 
-            # Verify both sources were tried in order
-            first_mock_source.get_latest_price.assert_called_once_with('AAPL')
-            second_mock_source.get_latest_price.assert_called_once_with('AAPL')
+        # Verify that get_source was called for each currency
+        self.assertEqual(
+            1, mock_get_source.call_count)  # Same source for both currencies
 
-    def test_price_inversion(self):
-        """Test that prices are inverted when the ^ symbol is used in the ticker."""
-        # Set up a mock source with a price of 0.75 CAD per USD
-        mock_source = mock.MagicMock()
-        mock_source.get_latest_price.return_value = (Decimal('0.75'),
-                                                     self.today, 'USD')
+        # Verify we got prices for both currencies
+        self.assertEqual(2, len(prices))
 
-        with mock.patch.object(self.source,
-                               '_get_or_create_source',
-                               return_value=mock_source):
-            # Test with inversion notation (^ symbol)
-            result = self.source.get_latest_price('CAD:USD:yahoo/^CADUSD=X')
+        # Sort prices by currency for consistent testing
+        prices.sort(key=lambda p: p.amount.currency)
 
-            # Verify price was inverted (1/0.75 = 1.33333...)
-            expected_price = Decimal('1') / Decimal('0.75')
-            self.assertEqual(result[0], expected_price)
-            self.assertEqual(result[1], self.today)
-            self.assertEqual(result[2], 'USD')
+        # Check USD price
+        usd_price = prices[1]
+        self.assertEqual('MSFT', usd_price.currency)
+        self.assertEqual('USD', usd_price.amount.currency)
+        self.assertEqual(Decimal('300.00'), usd_price.amount.number)
 
-            # Verify source was called with the ticker (without ^ symbol)
-            mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
+        # Check JPY price
+        jpy_price = prices[0]
+        self.assertEqual('MSFT', jpy_price.currency)
+        self.assertEqual('JPY', jpy_price.amount.currency)
+        self.assertEqual(Decimal('45000.00'), jpy_price.amount.number)
 
-    def test_zero_price_inversion_handling(self):
-        """Test that zero values are handled properly when inversion is requested."""
-        # Set up a mock source with a zero price
-        mock_source = mock.MagicMock()
-        mock_source.get_latest_price.return_value = (Decimal('0'), self.today,
-                                                     'USD')
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_historical_price_cached(self, mock_get_source):
+        """Test fetching a historical price that is already in the cache."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
 
-        with mock.patch.object(self.source,
-                               '_get_or_create_source',
-                               return_value=mock_source):
-            # Test with inversion notation (^ symbol) on a zero value
-            result = self.source.get_latest_price('CAD:USD:yahoo/^CADUSD=X')
+        # Set up the mock cache to return a cached result
+        cached_price = Price(meta={'source': 'cache'},
+                             date=historical_date,
+                             currency='AAPL',
+                             amount=Amount(number=Decimal('140.00'),
+                                           currency='USD'))
+        self.mock_cache.get.return_value = cached_price
 
-            # Verify we got no result since we can't invert zero
-            self.assertIsNone(result)
+        # Call the method
+        prices = list(
+            self.source.get_historical_price(self.apple, historical_datetime))
 
-            # Verify source was called
-            mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
+        # Verify that get_source was not called
+        mock_get_source.assert_not_called()
 
-    def test_caching_latest_price(self):
-        """Test that caching works for get_latest_price."""
-        # Set up a mock cache manager
-        mock_cache_manager = mock.MagicMock(spec=cache_manager.CacheManager)
-        mock_cache_manager.get.return_value = None  # First call returns miss
+        # Verify we got the cached result
+        self.assertEqual(1, len(prices))
+        self.assertEqual(cached_price, prices[0])
 
-        # Set up the source with the mock cache manager
-        source = DispatchingSource(cache_manager=mock_cache_manager)
+        # Verify cache was checked with correct parameters
+        self.mock_cache.get.assert_called_once_with('USD', 'AAPL',
+                                                    historical_date)
+        self.mock_cache.put.assert_not_called()
 
-        # Set up a mock source that returns a price
-        mock_source = mock.MagicMock()
-        mock_source.get_latest_price.return_value = (Decimal('150.25'),
-                                                     self.today, 'USD')
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_historical_price_source_success(self, mock_get_source):
+        """Test fetching a historical price from a source (not cached)."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
 
-        # Mock the _get_or_create_source to return our mock source
-        with mock.patch.object(source,
-                               '_get_or_create_source',
-                               return_value=mock_source):
-            # First call should check cache (miss) and then call the source
-            result = source.get_latest_price('AAPL:USD:yahoo/AAPL')
+        # Set up the mock source to return a price
+        mock_source = MockSource(response=SourcePrice(price=Decimal('140.00'),
+                                                      time=historical_datetime,
+                                                      quote_currency='USD'))
+        mock_get_source.return_value = mock_source
 
-            # Verify that cache was checked
-            mock_cache_manager.get.assert_called_once()
+        # Call the method
+        prices = list(
+            self.source.get_historical_price(self.apple, historical_datetime))
 
-            # Verify that source was called
-            mock_source.get_latest_price.assert_called_once()
+        # Verify that get_source was called with the right parameter
+        mock_get_source.assert_called_once_with(source_name='yahoo',
+                                                custom_only=True)
 
-            # Verify that result was cached
-            mock_cache_manager.put.assert_called_once()
+        # Verify we got a price
+        self.assertEqual(1, len(prices))
+        price = prices[0]
+        self.assertEqual('AAPL', price.currency)
+        self.assertEqual('USD', price.amount.currency)
+        self.assertEqual(Decimal('140.00'), price.amount.number)
+        self.assertEqual(historical_date, price.date)
+        self.assertEqual('yahoo', price.meta['source'])
 
-            # Reset mocks for next call
-            mock_cache_manager.reset_mock()
-            mock_source.reset_mock()
+        # Verify cache was checked and updated
+        self.mock_cache.get.assert_called_once_with('USD', 'AAPL',
+                                                    historical_date)
+        self.mock_cache.put.assert_called_once()
+        self.assertEqual('USD', self.mock_cache.put.call_args[0][0])
+        self.assertEqual('AAPL', self.mock_cache.put.call_args[0][1])
+        self.assertEqual(historical_date, self.mock_cache.put.call_args[0][2])
+        self.assertEqual(price, self.mock_cache.put.call_args[0][3])
 
-            # Set up cache to return a hit
-            mock_cache_manager.get.return_value = (Decimal('150.25'),
-                                                   self.today, 'USD')
+    @mock.patch(
+        'beansprout.quoter.sources.dispatching.SourceDispatcher._try_sources')
+    def test_get_historical_price_inversion(self, mock_try_sources):
+        """Test price inversion when the invert flag is True for historical prices."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
 
-            # Second call should hit the cache and not call the source
-            result2 = source.get_latest_price('AAPL:USD:yahoo/AAPL')
+        # Mock the _try_sources method directly with a response that indicates source_spec.invert = True
+        mock_try_sources.return_value = (SourceSpec(quote_currency='USD',
+                                                    source='yahoo',
+                                                    ticker='CADUSD=X',
+                                                    invert=True),
+                                         SourcePrice(price=Decimal('1.25'),
+                                                     time=historical_datetime,
+                                                     quote_currency='USD'))
 
-            # Verify that cache was checked
-            mock_cache_manager.get.assert_called_once()
+        # Call the method with a commodity that has inversion notation
+        prices = list(
+            self.source.get_historical_price(self.cad, historical_datetime))
 
-            # Verify that source was NOT called
-            mock_source.get_latest_price.assert_not_called()
+        # Verify we got one price
+        self.assertEqual(1, len(prices))
+        price = prices[0]
 
-            # Verify that put was NOT called
-            mock_cache_manager.put.assert_not_called()
+        self.assertEqual('USD', price.currency)
+        self.assertEqual('CAD', price.amount.currency)
 
-            # Verify that both results are identical
-            self.assertEqual(result, result2)
+        # The price should be inverted (1/1.25 = 0.8)
+        expected = Decimal('1') / Decimal('1.25')
+        self.assertAlmostEqual(float(expected),
+                               float(price.amount.number),
+                               places=6)
 
-    def test_caching_historical_price(self):
-        """Test that caching works for get_historical_price."""
-        # Set up a mock cache manager
-        mock_cache_manager = mock.MagicMock(spec=cache_manager.CacheManager)
-        mock_cache_manager.get.return_value = None  # First call returns miss
+        self.assertEqual(historical_date, price.date)
+        self.assertEqual('yahoo', price.meta['source'])
 
-        # Set up the source with the mock cache manager
-        source = DispatchingSource(cache_manager=mock_cache_manager)
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_historical_price_source_fallback(self, mock_get_source):
+        """Test falling back to the second source when the first fails for historical prices."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
 
-        # Set up a mock source that returns a price
-        mock_source = mock.MagicMock()
-        mock_source.get_historical_price.return_value = (Decimal('145.25'),
-                                                         self.yesterday, 'USD')
+        # Set up mock sources - first fails, second succeeds
+        failing_source = MockSource(response=None)
+        successful_source = MockSource(
+            response=SourcePrice(price=Decimal('45000.00'),
+                                 time=historical_datetime,
+                                 quote_currency='USD'))
 
-        # Mock the _get_or_create_source to return our mock source
-        with mock.patch.object(source,
-                               '_get_or_create_source',
-                               return_value=mock_source):
-            # First call should check cache (miss) and then call the source
-            result = source.get_historical_price('AAPL:USD:yahoo/AAPL',
-                                                 self.yesterday)
+        # Configure get_source to return different sources based on name
+        def side_effect(source_name, custom_only):
+            if source_name == 'coinbase':
+                return failing_source
+            elif source_name == 'coinmarketcap':
+                return successful_source
+            return None
 
-            # Verify that cache was checked
-            mock_cache_manager.get.assert_called_once()
+        mock_get_source.side_effect = side_effect
 
-            # Verify that source was called
-            mock_source.get_historical_price.assert_called_once()
+        # Call the method with a commodity that has multiple sources
+        prices = list(
+            self.source.get_historical_price(self.bitcoin,
+                                             historical_datetime))
 
-            # Verify that result was cached
-            mock_cache_manager.put.assert_called_once()
+        # Verify both sources were tried
+        self.assertEqual(2, mock_get_source.call_count)
+        mock_get_source.assert_any_call(source_name='coinbase',
+                                        custom_only=True)
+        mock_get_source.assert_any_call(source_name='coinmarketcap',
+                                        custom_only=True)
 
-            # Reset mocks for next call
-            mock_cache_manager.reset_mock()
-            mock_source.reset_mock()
+        # Verify we got a price from the second source
+        self.assertEqual(1, len(prices))
+        price = prices[0]
+        self.assertEqual('BTC', price.currency)
+        self.assertEqual('USD', price.amount.currency)
+        self.assertEqual(Decimal('45000.00'), price.amount.number)
+        self.assertEqual('coinmarketcap', price.meta['source'])
 
-            # Set up cache to return a hit
-            mock_cache_manager.get.return_value = (Decimal('145.25'),
-                                                   self.yesterday, 'USD')
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_historical_price_multiple_currencies(self, mock_get_source):
+        """Test fetching historical prices in multiple currencies for a single commodity."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
 
-            # Second call should hit the cache and not call the source
-            result2 = source.get_historical_price('AAPL:USD:yahoo/AAPL',
-                                                  self.yesterday)
+        # Set up the mock source to return different prices for different currencies
+        def side_effect(ticker, time):
+            if ticker == 'MSFT':
+                return SourcePrice(price=Decimal('280.00'),
+                                   time=historical_datetime,
+                                   quote_currency='USD')
+            elif ticker == 'MSFT.T':
+                return SourcePrice(price=Decimal('42000.00'),
+                                   time=historical_datetime,
+                                   quote_currency='JPY')
+            return None
 
-            # Verify that cache was checked
-            mock_cache_manager.get.assert_called_once()
+        mock_source = MockSource()
+        mock_source.get_historical_price = side_effect
+        mock_get_source.return_value = mock_source
 
-            # Verify that source was NOT called
-            mock_source.get_historical_price.assert_not_called()
+        # Call the method with a commodity that has multiple currencies
+        prices = list(
+            self.source.get_historical_price(self.multi_currency,
+                                             historical_datetime))
 
-            # Verify that put was NOT called
-            mock_cache_manager.put.assert_not_called()
+        # Verify that get_source was called for each currency
+        self.assertEqual(
+            1, mock_get_source.call_count)  # Same source for both currencies
 
-            # Verify that both results are identical
-            self.assertEqual(result, result2)
+        # Verify we got prices for both currencies
+        self.assertEqual(2, len(prices))
+
+        # Sort prices by currency for consistent testing
+        prices.sort(key=lambda p: p.amount.currency)
+
+        # Check USD price
+        usd_price = prices[1]
+        self.assertEqual('MSFT', usd_price.currency)
+        self.assertEqual('USD', usd_price.amount.currency)
+        self.assertEqual(Decimal('280.00'), usd_price.amount.number)
+
+        # Check JPY price
+        jpy_price = prices[0]
+        self.assertEqual('MSFT', jpy_price.currency)
+        self.assertEqual('JPY', jpy_price.amount.currency)
+        self.assertEqual(Decimal('42000.00'), jpy_price.amount.number)
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_historical_price_all_sources_fail(self, mock_get_source):
+        """Test behavior when all sources fail to return a historical price."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
+
+        # Set up mock source to return None
+        mock_source = MockSource(response=None)
+        mock_get_source.return_value = mock_source
+
+        # Call the method
+        prices = list(
+            self.source.get_historical_price(self.apple, historical_datetime))
+
+        # Verify that get_source was called
+        mock_get_source.assert_called_once_with(source_name='yahoo',
+                                                custom_only=True)
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was checked but not updated
+        self.mock_cache.get.assert_called_once()
+        self.mock_cache.put.assert_not_called()
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_historical_price_source_exception(self, mock_get_source):
+        """Test handling of exceptions from sources when fetching historical prices."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
+
+        # Set up mock source to raise an exception
+        mock_source = MockSource(raises=True)
+        mock_get_source.return_value = mock_source
+
+        # Call the method - should not raise an exception
+        prices = list(
+            self.source.get_historical_price(self.apple, historical_datetime))
+
+        # Verify that get_source was called
+        mock_get_source.assert_called_once()
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was checked but not updated
+        self.mock_cache.get.assert_called_once()
+        self.mock_cache.put.assert_not_called()
+
+    def test_get_historical_price_no_price_metadata(self):
+        """Test fetching a historical price for a commodity with no price metadata."""
+        # Set up test date
+        historical_date = datetime.date(2025, 1, 1)
+        historical_datetime = datetime.datetime(2025, 1, 1, 12, 0, 0)
+
+        # Call the method with a commodity that has no price metadata
+        prices = list(
+            self.source.get_historical_price(self.no_price_meta,
+                                             historical_datetime))
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was not checked or updated
+        self.mock_cache.get.assert_not_called()
+        self.mock_cache.put.assert_not_called()
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_prices_series_success(self, mock_get_source):
+        """Test fetching a price series successfully."""
+        # Set up test dates
+        start_date = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        end_date = datetime.datetime(2025, 1, 5, 12, 0, 0)
+
+        # Create a series of prices for different dates
+        price_series = [
+            SourcePrice(price=Decimal('150.00'),
+                        time=datetime.datetime(2025, 1, 1, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('152.50'),
+                        time=datetime.datetime(2025, 1, 2, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('155.00'),
+                        time=datetime.datetime(2025, 1, 3, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('153.75'),
+                        time=datetime.datetime(2025, 1, 4, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('157.25'),
+                        time=datetime.datetime(2025, 1, 5, 12, 0, 0),
+                        quote_currency='USD'),
+        ]
+
+        # Set up the mock source to return the price series
+        mock_source = MockSource(response=price_series)
+        mock_get_source.return_value = mock_source
+
+        # Call the method
+        prices = self.source.get_prices_series(self.apple, start_date,
+                                               end_date)
+
+        # Verify that get_source was called with the right parameter
+        mock_get_source.assert_called_once_with(source_name='yahoo',
+                                                custom_only=True)
+
+        # Verify we got all prices in the series
+        self.assertEqual(5, len(prices))
+
+        # Verify prices are sorted by date
+        self.assertEqual(datetime.date(2025, 1, 1), prices[0].date)
+        self.assertEqual(datetime.date(2025, 1, 5), prices[4].date)
+
+        # Check a sample price
+        sample_price = prices[2]  # Jan 3
+        self.assertEqual('AAPL', sample_price.currency)
+        self.assertEqual('USD', sample_price.amount.currency)
+        self.assertEqual(Decimal('155.00'), sample_price.amount.number)
+        self.assertEqual('yahoo', sample_price.meta['source'])
+
+        # Verify cache was updated for each price
+        self.assertEqual(5, self.mock_cache.put.call_count)
+
+    @mock.patch(
+        'beansprout.quoter.sources.dispatching.SourceDispatcher._try_sources')
+    def test_get_prices_series_inversion(self, mock_try_sources):
+        """Test price inversion in a series."""
+        # Set up test dates
+        start_date = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        end_date = datetime.datetime(2025, 1, 3, 12, 0, 0)
+
+        # Create a series of prices that need to be inverted
+        price_series = [
+            SourcePrice(price=Decimal('1.25'),
+                        time=datetime.datetime(2025, 1, 1, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('1.26'),
+                        time=datetime.datetime(2025, 1, 2, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('1.27'),
+                        time=datetime.datetime(2025, 1, 3, 12, 0, 0),
+                        quote_currency='USD'),
+        ]
+
+        # Mock the _try_sources method directly with a response that indicates source_spec.invert = True
+        mock_try_sources.return_value = (SourceSpec(quote_currency='USD',
+                                                    source='yahoo',
+                                                    ticker='CADUSD=X',
+                                                    invert=True), price_series)
+
+        # Call the method with a commodity that has inversion notation
+        prices = self.source.get_prices_series(self.cad, start_date, end_date)
+
+        # Verify we got all prices in the series
+        self.assertEqual(3, len(prices))
+
+        # Verify prices are sorted by date
+        self.assertEqual(datetime.date(2025, 1, 1), prices[0].date)
+        self.assertEqual(datetime.date(2025, 1, 3), prices[2].date)
+
+        # Check that all prices are inverted
+        for i, price in enumerate(prices):
+            self.assertEqual('USD', price.currency)
+            self.assertEqual('CAD', price.amount.currency)
+
+            # The price should be inverted (1/original)
+            original_price = price_series[i].price
+            expected = Decimal('1') / original_price
+            self.assertAlmostEqual(float(expected),
+                                   float(price.amount.number),
+                                   places=6)
+
+            self.assertEqual('yahoo', price.meta['source'])
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_prices_series_source_fallback(self, mock_get_source):
+        """Test falling back to the second source when the first fails for price series."""
+        # Set up test dates
+        start_date = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        end_date = datetime.datetime(2025, 1, 3, 12, 0, 0)
+
+        # Create a series of prices
+        price_series = [
+            SourcePrice(price=Decimal('50000.00'),
+                        time=datetime.datetime(2025, 1, 1, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('51000.00'),
+                        time=datetime.datetime(2025, 1, 2, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('52000.00'),
+                        time=datetime.datetime(2025, 1, 3, 12, 0, 0),
+                        quote_currency='USD'),
+        ]
+
+        # Set up mock sources - first fails, second succeeds
+        failing_source = MockSource(response=None)
+        successful_source = MockSource(response=price_series)
+
+        # Configure get_source to return different sources based on name
+        def side_effect(source_name, custom_only):
+            if source_name == 'coinbase':
+                return failing_source
+            elif source_name == 'coinmarketcap':
+                return successful_source
+            return None
+
+        mock_get_source.side_effect = side_effect
+
+        # Call the method with a commodity that has multiple sources
+        prices = self.source.get_prices_series(self.bitcoin, start_date,
+                                               end_date)
+
+        # Verify both sources were tried
+        self.assertEqual(2, mock_get_source.call_count)
+        mock_get_source.assert_any_call(source_name='coinbase',
+                                        custom_only=True)
+        mock_get_source.assert_any_call(source_name='coinmarketcap',
+                                        custom_only=True)
+
+        # Verify we got prices from the second source
+        self.assertEqual(3, len(prices))
+
+        # Check a sample price
+        sample_price = prices[1]  # Jan 2
+        self.assertEqual('BTC', sample_price.currency)
+        self.assertEqual('USD', sample_price.amount.currency)
+        self.assertEqual(Decimal('51000.00'), sample_price.amount.number)
+        self.assertEqual('coinmarketcap', sample_price.meta['source'])
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_prices_series_source_exception(self, mock_get_source):
+        """Test handling of exceptions from sources when fetching price series."""
+        # Set up test dates
+        start_date = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        end_date = datetime.datetime(2025, 1, 3, 12, 0, 0)
+
+        # Set up mock source to raise an exception
+        mock_source = MockSource(raises=True)
+        mock_get_source.return_value = mock_source
+
+        # Call the method - should not raise an exception
+        prices = self.source.get_prices_series(self.apple, start_date,
+                                               end_date)
+
+        # Verify that get_source was called
+        mock_get_source.assert_called_once()
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was not updated
+        self.mock_cache.put.assert_not_called()
+
+    def test_get_prices_series_no_price_metadata(self):
+        """Test fetching a price series for a commodity with no price metadata."""
+        # Set up test dates
+        start_date = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        end_date = datetime.datetime(2025, 1, 3, 12, 0, 0)
+
+        # Call the method with a commodity that has no price metadata
+        prices = self.source.get_prices_series(self.no_price_meta, start_date,
+                                               end_date)
+
+        # Verify we got no prices
+        self.assertEqual(0, len(prices))
+
+        # Verify cache was not checked or updated
+        self.mock_cache.get.assert_not_called()
+        self.mock_cache.put.assert_not_called()
+
+    @mock.patch('beansprout.quoter.sources.dispatching.get_source')
+    def test_get_prices_series_multiple_currencies(self, mock_get_source):
+        """Test fetching price series in multiple currencies for a single commodity."""
+        # Set up test dates
+        start_date = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        end_date = datetime.datetime(2025, 1, 3, 12, 0, 0)
+
+        # Create price series for USD
+        usd_series = [
+            SourcePrice(price=Decimal('300.00'),
+                        time=datetime.datetime(2025, 1, 1, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('305.00'),
+                        time=datetime.datetime(2025, 1, 2, 12, 0, 0),
+                        quote_currency='USD'),
+            SourcePrice(price=Decimal('310.00'),
+                        time=datetime.datetime(2025, 1, 3, 12, 0, 0),
+                        quote_currency='USD'),
+        ]
+
+        # Create price series for JPY
+        jpy_series = [
+            SourcePrice(price=Decimal('45000.00'),
+                        time=datetime.datetime(2025, 1, 1, 12, 0, 0),
+                        quote_currency='JPY'),
+            SourcePrice(price=Decimal('45750.00'),
+                        time=datetime.datetime(2025, 1, 2, 12, 0, 0),
+                        quote_currency='JPY'),
+            SourcePrice(price=Decimal('46500.00'),
+                        time=datetime.datetime(2025, 1, 3, 12, 0, 0),
+                        quote_currency='JPY'),
+        ]
+
+        # Set up the mock source to return different price series for different currencies
+        def side_effect(ticker, time_begin, time_end):
+            if ticker == 'MSFT':
+                return usd_series
+            elif ticker == 'MSFT.T':
+                return jpy_series
+            return None
+
+        mock_source = MockSource()
+        mock_source.get_prices_series = side_effect
+        mock_get_source.return_value = mock_source
+
+        # Call the method with a commodity that has multiple currencies
+        prices = self.source.get_prices_series(self.multi_currency, start_date,
+                                               end_date)
+
+        # Verify that get_source was called
+        self.assertEqual(
+            1, mock_get_source.call_count)  # Same source for both currencies
+
+        # Verify we got prices for both currencies (3 dates x 2 currencies = 6 prices)
+        self.assertEqual(6, len(prices))
+
+        # Verify prices are sorted by date
+        self.assertEqual(datetime.date(2025, 1, 1), prices[0].date)
+        self.assertEqual(datetime.date(2025, 1, 1), prices[1].date)
+        self.assertEqual(datetime.date(2025, 1, 3), prices[4].date)
+        self.assertEqual(datetime.date(2025, 1, 3), prices[5].date)
+
+        # Count prices by currency
+        usd_prices = [p for p in prices if p.amount.currency == 'USD']
+        jpy_prices = [p for p in prices if p.amount.currency == 'JPY']
+
+        self.assertEqual(3, len(usd_prices))
+        self.assertEqual(3, len(jpy_prices))
+
+        # Check sample prices
+        usd_sample = usd_prices[1]  # Jan 2
+        self.assertEqual('MSFT', usd_sample.currency)
+        self.assertEqual('USD', usd_sample.amount.currency)
+        self.assertEqual(Decimal('305.00'), usd_sample.amount.number)
+
+        jpy_sample = jpy_prices[1]  # Jan 2
+        self.assertEqual('MSFT', jpy_sample.currency)
+        self.assertEqual('JPY', jpy_sample.amount.currency)
+        self.assertEqual(Decimal('45750.00'), jpy_sample.amount.number)
 
 
 if __name__ == '__main__':
