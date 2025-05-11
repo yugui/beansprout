@@ -5,6 +5,7 @@ py_library(
     name = "sources",
     srcs = [
         "__init__.py",
+        "cache_manager.py",
         "dispatching.py",
         "example.py",
     ],
@@ -19,6 +20,16 @@ py_library(
 py_test(
     name = "dispatching_test",
     srcs = ["dispatching_test.py"],
+    deps = [
+        ":sources",
+        requirement("beancount"),
+        requirement("beanprice"),
+    ],
+)
+
+py_test(
+    name = "cache_manager_test",
+    srcs = ["cache_manager_test.py"],
     deps = [
         ":sources",
         requirement("beancount"),
