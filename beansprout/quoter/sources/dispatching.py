@@ -9,7 +9,7 @@ and commodity metadata.
 import datetime
 import importlib
 import logging
-from typing import Dict, List, Optional, Tuple, Iterable, Type, Set
+from typing import Dict, List, Optional, Tuple, Iterable, Type, Set, Union
 from collections import namedtuple
 
 from beansprout.quoter.sources import cache_manager
@@ -187,7 +187,7 @@ class DispatchingSource(SourceBase):
                 return cached_result
 
         # Try each price source in order
-        result = self._try_sources_latest(price_sources)
+        result = self._try_sources(price_sources, 'get_latest_price')
 
         # Cache the result if successful and we have a cache manager
         if result and self._cache_manager:
@@ -195,47 +195,6 @@ class DispatchingSource(SourceBase):
                                     datetime.date.today(), result)
 
         return result
-
-    def _try_sources_latest(
-        self, price_sources: List[PriceSource]
-    ) -> Optional[Tuple[Decimal, datetime.date, str]]:
-        """Try each price source to get the latest price.
-        
-        Args:
-            price_sources: List of price sources to try
-            
-        Returns:
-            A tuple with (price, date, currency) if a price is found, None otherwise
-        """
-        for price_source in price_sources:
-            source = self._get_or_create_source(price_source.source)
-            if not source:
-                continue
-
-            try:
-                result = source.get_latest_price(price_source.ticker)
-                if result:
-                    amount, price_date, source_currency = result
-
-                    # If inversion is required, calculate 1/amount
-                    if price_source.invert:
-                        # We need to handle the possibility of zero value
-                        if amount == Decimal('0'):
-                            self._logger.warning(
-                                f"Cannot invert zero value from {price_source.source}/{price_source.ticker}"
-                            )
-                            continue
-                        amount = Decimal('1') / amount
-
-                    # Return with the requested currency
-                    return (amount, price_date, price_source.currency)
-            except Exception as e:
-                self._logger.warning(
-                    f"Error fetching latest price using {price_source.source}/{price_source.ticker}: {e}"
-                )
-                continue
-
-        return None
 
     def get_historical_price(
             self, ticker: str, time: datetime.date
@@ -282,7 +241,8 @@ class DispatchingSource(SourceBase):
                 return cached_result
 
         # Try each price source in order
-        result = self._try_sources_historical(price_sources, time)
+        result = self._try_sources(price_sources, 'get_historical_price',
+                                   (time, ))
 
         # Cache the result if successful and we have a cache manager
         if result and self._cache_manager:
@@ -290,48 +250,6 @@ class DispatchingSource(SourceBase):
                                     result)
 
         return result
-
-    def _try_sources_historical(
-            self, price_sources: List[PriceSource], time: datetime.date
-    ) -> Optional[Tuple[Decimal, datetime.date, str]]:
-        """Try each price source to get a historical price.
-        
-        Args:
-            price_sources: List of price sources to try
-            time: The date to fetch the price for
-            
-        Returns:
-            A tuple with (price, date, currency) if a price is found, None otherwise
-        """
-        for price_source in price_sources:
-            source = self._get_or_create_source(price_source.source)
-            if not source:
-                continue
-
-            try:
-                result = source.get_historical_price(price_source.ticker, time)
-                if result:
-                    amount, price_date, source_currency = result
-
-                    # If inversion is required, calculate 1/amount
-                    if price_source.invert:
-                        # We need to handle the possibility of zero value
-                        if amount == Decimal('0'):
-                            self._logger.warning(
-                                f"Cannot invert zero value from {price_source.source}/{price_source.ticker}"
-                            )
-                            continue
-                        amount = Decimal('1') / amount
-
-                    # Return with the requested currency
-                    return (amount, price_date, price_source.currency)
-            except Exception as e:
-                self._logger.warning(
-                    f"Error fetching historical price using {price_source.source}/{price_source.ticker}: {e}"
-                )
-                continue
-
-        return None
 
     def get_prices_series(
         self, ticker: str, time_begin: datetime.date, time_end: datetime.date
@@ -374,56 +292,9 @@ class DispatchingSource(SourceBase):
         # Each individual price can still be cached via get_historical_price.
 
         # Try each price source in order
-        return self._try_sources_series(price_sources, time_begin, time_end)
-
-    def _try_sources_series(
-        self, price_sources: List[PriceSource], time_begin: datetime.date,
-        time_end: datetime.date
-    ) -> Optional[Iterable[Tuple[datetime.date, Decimal, str]]]:
-        """Try each price source to get a series of prices.
-        
-        Args:
-            price_sources: List of price sources to try
-            time_begin: Start date for the price series
-            time_end: End date for the price series
-            
-        Returns:
-            An iterable of (date, price, currency) tuples if prices are found, None otherwise
-        """
-        for price_source in price_sources:
-            source = self._get_or_create_source(price_source.source)
-            if not source:
-                continue
-
-            try:
-                # Check if the source implements get_prices_series
-                if not hasattr(source, 'get_prices_series'):
-                    continue
-
-                result = source.get_prices_series(price_source.ticker,
-                                                  time_begin, time_end)
-                if result:
-                    # Adjust the currency to match what was requested
-                    # The original result format is [(date, price, currency), ...]
-                    # We need to transform it to use the requested currency
-
-                    # If inversion is required, calculate 1/price for each entry
-                    if price_source.invert:
-                        return [(date, Decimal('1') /
-                                 price if price != Decimal('0') else None,
-                                 price_source.currency)
-                                for date, price, _ in result
-                                if price != Decimal('0')]
-                    else:
-                        return [(date, price, price_source.currency)
-                                for date, price, _ in result]
-            except Exception as e:
-                self._logger.warning(
-                    f"Error fetching price series using {price_source.source}/{price_source.ticker}: {e}"
-                )
-                continue
-
-        return None
+        return self._try_sources(price_sources,
+                                 'get_prices_series', (time_begin, time_end),
+                                 is_series=True)
 
     def _get_or_create_source(self, source_name: str) -> Optional[SourceBase]:
         """Get or create a source by name.
@@ -498,6 +369,85 @@ class DispatchingSource(SourceBase):
                                 invert=invert))
 
         return sources
+
+    def _try_sources(
+        self,
+        price_sources: List[PriceSource],
+        method_name: str,
+        args: tuple = (),
+        is_series: bool = False
+    ) -> Optional[Union[Tuple[Decimal, datetime.date, str], Iterable[Tuple[
+            datetime.date, Decimal, str]]]]:
+        """Generic method to try multiple price sources with a specified method.
+        
+        Args:
+            price_sources: List of price sources to try
+            method_name: Name of the method to call on the source
+            args: Arguments to pass to the method
+            is_series: Whether the method returns a price series
+            
+        Returns:
+            The result from the first successful price source call
+        """
+        for price_source in price_sources:
+            source = self._get_or_create_source(price_source.source)
+            if not source:
+                continue
+
+            try:
+                # Check if the source implements the required method
+                if not hasattr(source, method_name):
+                    if is_series:  # Only log for series, as it's optional
+                        continue
+                    else:
+                        self._logger.warning(
+                            f"Source {price_source.source} does not implement {method_name}"
+                        )
+                        continue
+
+                # Get the method and call it with the appropriate arguments
+                method = getattr(source, method_name)
+                full_args = (price_source.ticker, ) + args
+                result = method(*full_args)
+
+                if not result:
+                    continue
+
+                if is_series:
+                    # Handle series format: [(date, price, currency), ...]
+                    if price_source.invert:
+                        return [(date, Decimal('1') /
+                                 price if price != Decimal('0') else None,
+                                 price_source.currency)
+                                for date, price, _ in result
+                                if price != Decimal('0')]
+                    else:
+                        return [(date, price, price_source.currency)
+                                for date, price, _ in result]
+                else:
+                    # Handle single price format: (amount, date, currency)
+                    amount, price_date, source_currency = result
+
+                    # If inversion is required, calculate 1/amount
+                    if price_source.invert:
+                        # We need to handle the possibility of zero value
+                        if amount == Decimal('0'):
+                            self._logger.warning(
+                                f"Cannot invert zero value from {price_source.source}/{price_source.ticker}"
+                            )
+                            continue
+                        amount = Decimal('1') / amount
+
+                    # Return with the requested currency
+                    return (amount, price_date, price_source.currency)
+
+            except Exception as e:
+                self._logger.warning(
+                    f"Error fetching price using {method_name} from {price_source.source}/{price_source.ticker}: {e}"
+                )
+                continue
+
+        return None
 
 
 # Create a singleton instance as the Source class

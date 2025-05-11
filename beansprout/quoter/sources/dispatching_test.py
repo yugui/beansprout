@@ -380,83 +380,79 @@ class TestDispatchingSource(unittest.TestCase):
         self.assertEqual(self.latest_ticker, 'CADUSD=X')
         self.assertTrue(mock_source.get_latest_called)
 
-    def test_try_sources_latest(self):
-        """Test trying multiple sources to get the latest price."""
-        # Create a mock source
-        mock_source = mock.MagicMock()
-        mock_source.get_latest_price.return_value = (Decimal('150.00'),
-                                                     self.today, 'USD')
+    def test_multiple_sources_fallback(self):
+        """Test that the source tries multiple sources in order and uses the first successful one."""
+        # First source returns None
+        first_mock_source = mock.MagicMock()
+        first_mock_source.get_latest_price.return_value = None
 
-        # Set up price sources
-        price_sources = [
-            PriceSource(currency='USD',
-                        source='yahoo',
-                        ticker='AAPL',
-                        invert=False),
-            PriceSource(currency='CAD',
-                        source='yahoo',
-                        ticker='AAPL.TO',
-                        invert=False)
-        ]
+        # Second source returns a price
+        second_mock_source = mock.MagicMock()
+        second_mock_source.get_latest_price.return_value = (Decimal('150.00'),
+                                                            self.today, 'USD')
 
-        # Patch _get_or_create_source
+        # Setup _get_or_create_source to return different sources based on source name
+        def side_effect(source_name):
+            if source_name == 'source1':
+                return first_mock_source
+            elif source_name == 'source2':
+                return second_mock_source
+            return None
+
         with mock.patch.object(self.source,
                                '_get_or_create_source',
-                               return_value=mock_source):
-            result = self.source._try_sources_latest(price_sources)
+                               side_effect=side_effect):
+            # Test with multiple sources specified in the ticker string
+            result = self.source.get_latest_price(
+                'STOCK:USD:source1/AAPL,source2/AAPL')
 
-        # Verify result
-        self.assertEqual(result, (Decimal('150.00'), self.today, 'USD'))
-        mock_source.get_latest_price.assert_called_once_with('AAPL')
+            # Verify we got a result from the second source
+            self.assertEqual(result, (Decimal('150.00'), self.today, 'USD'))
 
-    def test_try_sources_latest_with_inversion(self):
-        """Test trying sources to get the latest price with inversion."""
-        # Create a mock source
+            # Verify both sources were tried in order
+            first_mock_source.get_latest_price.assert_called_once_with('AAPL')
+            second_mock_source.get_latest_price.assert_called_once_with('AAPL')
+
+    def test_price_inversion(self):
+        """Test that prices are inverted when the ^ symbol is used in the ticker."""
+        # Set up a mock source with a price of 0.75 CAD per USD
         mock_source = mock.MagicMock()
         mock_source.get_latest_price.return_value = (Decimal('0.75'),
                                                      self.today, 'USD')
 
-        # Set up price source with inversion
-        price_source = PriceSource(currency='USD',
-                                   source='yahoo',
-                                   ticker='CADUSD=X',
-                                   invert=True)
-
-        # Patch _get_or_create_source
         with mock.patch.object(self.source,
                                '_get_or_create_source',
                                return_value=mock_source):
-            result = self.source._try_sources_latest([price_source])
+            # Test with inversion notation (^ symbol)
+            result = self.source.get_latest_price('CAD:USD:yahoo/^CADUSD=X')
 
-        # Verify result - price should be inverted
-        expected_price = Decimal('1') / Decimal('0.75')  # 1.33333...
-        self.assertEqual(result[0], expected_price)
-        self.assertEqual(result[1], self.today)
-        self.assertEqual(result[2], 'USD')
-        mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
+            # Verify price was inverted (1/0.75 = 1.33333...)
+            expected_price = Decimal('1') / Decimal('0.75')
+            self.assertEqual(result[0], expected_price)
+            self.assertEqual(result[1], self.today)
+            self.assertEqual(result[2], 'USD')
 
-    def test_try_sources_latest_with_zero_inversion(self):
-        """Test trying sources to get the latest price with zero inversion."""
-        # Create a mock source
+            # Verify source was called with the ticker (without ^ symbol)
+            mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
+
+    def test_zero_price_inversion_handling(self):
+        """Test that zero values are handled properly when inversion is requested."""
+        # Set up a mock source with a zero price
         mock_source = mock.MagicMock()
         mock_source.get_latest_price.return_value = (Decimal('0'), self.today,
                                                      'USD')
 
-        # Set up price source with inversion
-        price_source = PriceSource(currency='USD',
-                                   source='yahoo',
-                                   ticker='CADUSD=X',
-                                   invert=True)
-
-        # Patch _get_or_create_source
         with mock.patch.object(self.source,
                                '_get_or_create_source',
                                return_value=mock_source):
-            result = self.source._try_sources_latest([price_source])
+            # Test with inversion notation (^ symbol) on a zero value
+            result = self.source.get_latest_price('CAD:USD:yahoo/^CADUSD=X')
 
-        # Verify result - should be None since we can't invert zero
-        self.assertIsNone(result)
-        mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
+            # Verify we got no result since we can't invert zero
+            self.assertIsNone(result)
+
+            # Verify source was called
+            mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
 
     def test_caching_latest_price(self):
         """Test that caching works for get_latest_price."""
