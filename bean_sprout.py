@@ -169,7 +169,8 @@ def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
     if not model_path:
         model_path = os.environ.get(
             "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
-            os.path.expanduser("~/.cache/beansprout/account-prediction.pickle"))
+            os.path.expanduser(
+                "~/.cache/beansprout/account-prediction.pickle"))
 
     # Load the account predictor model
     try:
@@ -363,6 +364,57 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     click.echo("Done.")
 
 
+@click.command('archive')
+@click.argument('src',
+                nargs=-1,
+                type=click.Path(exists=True, resolve_path=True))
+@click.option('--destination',
+              '-o',
+              metavar='DIR',
+              type=click.Path(file_okay=False, resolve_path=True),
+              help='The destination documents tree root directory.')
+@click.option('--overwrite',
+              '-f',
+              is_flag=True,
+              help='Overwrite destination files with the same name.')
+@click.option('--dry-run',
+              '-n',
+              is_flag=True,
+              help='Just print where the files would be moved.')
+@click.option('--failfast',
+              '-x',
+              is_flag=True,
+              help='Stop processing at the first error.')
+@click.option('--quiet', '-q', count=True, help='Suppress all output.')
+@click.pass_obj
+def _archive(ctx, src, destination, overwrite, dry_run, failfast, quiet):
+    """Archive documents.
+
+    Walk the SRC list of files or directories and move each file identified by
+    one of the configured importers in a directory hierarchy mirroring the
+    structure of the accounts associated to the documents and with a file name
+    composed by the document date and document name returned by the importer.
+
+    Documents are moved to their filing location only when no errors are
+    encountered processing all the input files. Documents in the destination
+    directory are not overwritten, unless the --force option is used.
+    
+    The default destination path follows Beansprout's conventional directory
+    structure: {destination_dir}/transactions/{account_hierarchy}/{filename}
+    """
+    # Modify the destination to include the "transactions" prefix
+    modified_destination = None
+    if destination:
+        modified_destination = os.path.join(destination, "transactions")
+    else:
+        modified_destination = os.path.join(os.getcwd(), "transactions")
+
+    # Call the original beangulp._archive function with the modified destination
+    from beangulp import _archive as beangulp_archive
+    return beangulp_archive(ctx, src, modified_destination, overwrite, dry_run,
+                            failfast, quiet)
+
+
 class ExtendedIngest(beangulp.Ingest):
     """Extended version of beangulp.Ingest with additional subcommands."""
 
@@ -375,6 +427,12 @@ class ExtendedIngest(beangulp.Ingest):
         """
         # Initialize the parent class
         super().__init__(importers, hooks)
+
+        # Remove the original archive command
+        self.cli.commands.pop("archive", None)
+
+        # Add our custom archive command
+        self.cli.add_command(_archive)
 
         # Add the merge command
         self.cli.add_command(_merge)
