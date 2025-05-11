@@ -1,9 +1,11 @@
 """Cache manager for price quoters.
 
 This module provides caching capabilities for price quotes to reduce
-network calls and improve performance.
+network calls and improve performance. It implements the Strategy pattern
+to allow different caching implementations.
 """
 
+import abc
 import datetime
 import dbm  # Using the generic dbm instead of dbm.gnu for portability
 import logging
@@ -16,10 +18,69 @@ T = TypeVar('T')
 CacheValue = Tuple[float, T]  # (timestamp, data)
 
 
-class CacheManager:
-    """Manages caching of price quotes using GDBM storage.
+class CacheManager(abc.ABC):
+    """Abstract base class defining the interface for price quote cache managers.
     
-    This class provides persistent caching of price quotes using GDBM as the
+    This class defines the interface for all cache manager implementations.
+    Concrete implementations should inherit from this class and implement
+    the required methods.
+    """
+
+    @abc.abstractmethod
+    def get(self, ticker: str, base_ticker: str,
+            date: datetime.date) -> Optional[Any]:
+        """Retrieve a cached quote if available.
+        
+        Args:
+            ticker: The ticker symbol of the quote
+            base_ticker: The base ticker (currency) of the quote
+            date: Date of the quote
+            
+        Returns:
+            Quote object if found and valid, None otherwise.
+        """
+        pass
+
+    @abc.abstractmethod
+    def put(self, ticker: str, base_ticker: str, date: datetime.date,
+            quote_result: Any) -> None:
+        """Store a quote result in the cache.
+        
+        Args:
+            ticker: The ticker symbol
+            base_ticker: The base ticker (currency)
+            date: Date of the quote
+            quote_result: The quote result to cache
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_stats(self) -> Dict[str, Union[int, float]]:
+        """Return cache statistics.
+        
+        Returns:
+            Dictionary containing hit/miss statistics
+        """
+        pass
+
+    @abc.abstractmethod
+    def close(self) -> None:
+        """Close the cache resources."""
+        pass
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensure resources are closed."""
+        self.close()
+
+
+class DBMCacheManager(CacheManager):
+    """Manages caching of price quotes using DBM storage.
+    
+    This class provides persistent caching of price quotes using DBM as the
     underlying storage mechanism. It handles serialization/deserialization,
     expiration based on TTL, and cache size limits.
     """
@@ -215,3 +276,61 @@ class CacheManager:
             self._db.close()
         except Exception as e:
             logging.warning("Error closing cache database: %s", str(e))
+
+
+class NullCacheManager(CacheManager):
+    """A no-op cache manager implementation that doesn't perform any caching.
+    
+    This implementation can be used when caching should be disabled. All operations
+    are no-ops, and the get method always indicates a cache miss.
+    """
+
+    def __init__(self):
+        """Initialize the NullCacheManager."""
+        self._stats = {'hits': 0, 'misses': 0}
+
+    def get(self, ticker: str, base_ticker: str,
+            date: datetime.date) -> Optional[Any]:
+        """Always return None (cache miss).
+        
+        Args:
+            ticker: The ticker symbol of the quote
+            base_ticker: The base ticker (currency) of the quote
+            date: Date of the quote
+            
+        Returns:
+            Always None to indicate cache miss.
+        """
+        # Increment miss counter for consistency
+        self._stats['misses'] += 1
+        return None
+
+    def put(self, ticker: str, base_ticker: str, date: datetime.date,
+            quote_result: Any) -> None:
+        """No-op for putting items in cache.
+        
+        Args:
+            ticker: The ticker symbol
+            base_ticker: The base ticker (currency)
+            date: Date of the quote
+            quote_result: The quote result that would be cached
+        """
+        # No-op, we don't cache anything
+        pass
+
+    def get_stats(self) -> Dict[str, Union[int, float]]:
+        """Return cache statistics.
+        
+        Returns:
+            Dictionary containing hit/miss statistics. For NullCacheManager,
+            there will only be misses.
+        """
+        stats = dict(self._stats)
+        total = stats['hits'] + stats['misses']
+        stats['hit_ratio'] = stats['hits'] / total if total > 0 else 0
+        return stats
+
+    def close(self) -> None:
+        """No-op for closing resources."""
+        # No resources to close
+        pass

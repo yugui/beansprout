@@ -16,6 +16,7 @@ from beanprice import source as beanprice_source
 
 # Import from the new location directly
 from beansprout.quoter.sources.dispatching import DispatchingSource
+from beansprout.quoter.sources import cache_manager
 
 
 class QuoteFetcher:
@@ -29,17 +30,20 @@ class QuoteFetcher:
     appropriate subsources.
     """
 
-    def __init__(self, custom_only: bool = False) -> None:
+    def __init__(self, custom_only: bool = False, cache_manager=None) -> None:
         """Initialize the QuoteFetcher.
         
         Args:
             custom_only: If True, only use custom quoters from the beansprout.quoter.sources directory.
                          If False, also use built-in beanprice sources.
+            cache_manager: The cache manager to use for caching price quotes.
+                          If None, no caching is performed.
         """
         self.custom_only = custom_only
         self._logger = logging.getLogger(__name__)
         # Create a DispatchingSource instance to handle source delegation
-        self._dispatch_source = DispatchingSource(custom_only=custom_only)
+        self._dispatch_source = DispatchingSource(custom_only=custom_only,
+                                                  cache_manager=cache_manager)
 
     def fetch_quote(self, commodity: Commodity,
                     quote_date: datetime.date) -> Optional[Price]:

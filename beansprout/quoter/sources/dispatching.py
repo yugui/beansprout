@@ -12,6 +12,8 @@ import logging
 from typing import Dict, List, Optional, Tuple, Iterable, Type, Set
 from collections import namedtuple
 
+from beansprout.quoter.sources import cache_manager
+
 from beancount.core.data import Commodity
 from beancount.core.number import Decimal
 from beanprice.source import Source as SourceBase
@@ -124,16 +126,23 @@ class DispatchingSource(SourceBase):
     and then delegates price fetching to those sources.
     """
 
-    def __init__(self, custom_only: bool = False) -> None:
+    def __init__(self,
+                 custom_only: bool = False,
+                 cache_manager: 'cache_manager.CacheManager' = None) -> None:
         """Initialize the DispatchingSource.
         
         Args:
             custom_only: If True, only use custom quoters from the beansprout.quoter.sources directory.
                          If False, also use built-in beanprice sources.
+            cache_manager: The cache manager to use for caching price quotes.
+                          If None, no caching is performed.
         """
         self.custom_only = custom_only
         self._logger = logging.getLogger(__name__)
         self._sources_cache: Dict[str, SourceBase] = {}
+
+        # Set the cache manager
+        self._cache_manager = cache_manager
 
     def get_latest_price(
             self, ticker: str) -> Optional[Tuple[Decimal, datetime.date, str]]:
@@ -168,8 +177,24 @@ class DispatchingSource(SourceBase):
         # Extract price sources and try each one
         price_sources = self._get_price_sources(commodity)
 
+        # Check cache first if we have a cache manager
+        if self._cache_manager:
+            today = datetime.date.today()
+            cached_result = self._cache_manager.get(commodity_currency,
+                                                    price_meta, today)
+            if cached_result:
+                self._logger.debug(f"Using cached price for {ticker}")
+                return cached_result
+
         # Try each price source in order
-        return self._try_sources_latest(price_sources)
+        result = self._try_sources_latest(price_sources)
+
+        # Cache the result if successful and we have a cache manager
+        if result and self._cache_manager:
+            self._cache_manager.put(commodity_currency, price_meta,
+                                    datetime.date.today(), result)
+
+        return result
 
     def _try_sources_latest(
         self, price_sources: List[PriceSource]
@@ -247,8 +272,24 @@ class DispatchingSource(SourceBase):
         # Extract price sources and try each one
         price_sources = self._get_price_sources(commodity)
 
+        # Check cache first if we have a cache manager
+        if self._cache_manager:
+            cached_result = self._cache_manager.get(commodity_currency,
+                                                    price_meta, time)
+            if cached_result:
+                self._logger.debug(
+                    f"Using cached historical price for {ticker} on {time}")
+                return cached_result
+
         # Try each price source in order
-        return self._try_sources_historical(price_sources, time)
+        result = self._try_sources_historical(price_sources, time)
+
+        # Cache the result if successful and we have a cache manager
+        if result and self._cache_manager:
+            self._cache_manager.put(commodity_currency, price_meta, time,
+                                    result)
+
+        return result
 
     def _try_sources_historical(
             self, price_sources: List[PriceSource], time: datetime.date
@@ -327,6 +368,10 @@ class DispatchingSource(SourceBase):
 
         # Extract price sources and try each one
         price_sources = self._get_price_sources(commodity)
+
+        # For a price series, we don't use caching since it's more complex
+        # to cache and retrieve an entire series with multiple dates.
+        # Each individual price can still be cached via get_historical_price.
 
         # Try each price source in order
         return self._try_sources_series(price_sources, time_begin, time_end)

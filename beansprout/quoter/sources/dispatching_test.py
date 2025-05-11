@@ -10,6 +10,7 @@ from typing import Optional, Tuple, List, Iterable
 from beancount.core.data import Commodity
 
 from beansprout.quoter.sources.dispatching import DispatchingSource, Source, PriceSource
+from beansprout.quoter.sources import cache_manager
 
 
 class MockSource:
@@ -456,6 +457,114 @@ class TestDispatchingSource(unittest.TestCase):
         # Verify result - should be None since we can't invert zero
         self.assertIsNone(result)
         mock_source.get_latest_price.assert_called_once_with('CADUSD=X')
+
+    def test_caching_latest_price(self):
+        """Test that caching works for get_latest_price."""
+        # Set up a mock cache manager
+        mock_cache_manager = mock.MagicMock(spec=cache_manager.CacheManager)
+        mock_cache_manager.get.return_value = None  # First call returns miss
+
+        # Set up the source with the mock cache manager
+        source = DispatchingSource(cache_manager=mock_cache_manager)
+
+        # Set up a mock source that returns a price
+        mock_source = mock.MagicMock()
+        mock_source.get_latest_price.return_value = (Decimal('150.25'),
+                                                     self.today, 'USD')
+
+        # Mock the _get_or_create_source to return our mock source
+        with mock.patch.object(source,
+                               '_get_or_create_source',
+                               return_value=mock_source):
+            # First call should check cache (miss) and then call the source
+            result = source.get_latest_price('AAPL:USD:yahoo/AAPL')
+
+            # Verify that cache was checked
+            mock_cache_manager.get.assert_called_once()
+
+            # Verify that source was called
+            mock_source.get_latest_price.assert_called_once()
+
+            # Verify that result was cached
+            mock_cache_manager.put.assert_called_once()
+
+            # Reset mocks for next call
+            mock_cache_manager.reset_mock()
+            mock_source.reset_mock()
+
+            # Set up cache to return a hit
+            mock_cache_manager.get.return_value = (Decimal('150.25'),
+                                                   self.today, 'USD')
+
+            # Second call should hit the cache and not call the source
+            result2 = source.get_latest_price('AAPL:USD:yahoo/AAPL')
+
+            # Verify that cache was checked
+            mock_cache_manager.get.assert_called_once()
+
+            # Verify that source was NOT called
+            mock_source.get_latest_price.assert_not_called()
+
+            # Verify that put was NOT called
+            mock_cache_manager.put.assert_not_called()
+
+            # Verify that both results are identical
+            self.assertEqual(result, result2)
+
+    def test_caching_historical_price(self):
+        """Test that caching works for get_historical_price."""
+        # Set up a mock cache manager
+        mock_cache_manager = mock.MagicMock(spec=cache_manager.CacheManager)
+        mock_cache_manager.get.return_value = None  # First call returns miss
+
+        # Set up the source with the mock cache manager
+        source = DispatchingSource(cache_manager=mock_cache_manager)
+
+        # Set up a mock source that returns a price
+        mock_source = mock.MagicMock()
+        mock_source.get_historical_price.return_value = (Decimal('145.25'),
+                                                         self.yesterday, 'USD')
+
+        # Mock the _get_or_create_source to return our mock source
+        with mock.patch.object(source,
+                               '_get_or_create_source',
+                               return_value=mock_source):
+            # First call should check cache (miss) and then call the source
+            result = source.get_historical_price('AAPL:USD:yahoo/AAPL',
+                                                 self.yesterday)
+
+            # Verify that cache was checked
+            mock_cache_manager.get.assert_called_once()
+
+            # Verify that source was called
+            mock_source.get_historical_price.assert_called_once()
+
+            # Verify that result was cached
+            mock_cache_manager.put.assert_called_once()
+
+            # Reset mocks for next call
+            mock_cache_manager.reset_mock()
+            mock_source.reset_mock()
+
+            # Set up cache to return a hit
+            mock_cache_manager.get.return_value = (Decimal('145.25'),
+                                                   self.yesterday, 'USD')
+
+            # Second call should hit the cache and not call the source
+            result2 = source.get_historical_price('AAPL:USD:yahoo/AAPL',
+                                                  self.yesterday)
+
+            # Verify that cache was checked
+            mock_cache_manager.get.assert_called_once()
+
+            # Verify that source was NOT called
+            mock_source.get_historical_price.assert_not_called()
+
+            # Verify that put was NOT called
+            mock_cache_manager.put.assert_not_called()
+
+            # Verify that both results are identical
+            self.assertEqual(result, result2)
 
 
 if __name__ == '__main__':

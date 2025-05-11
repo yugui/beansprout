@@ -31,6 +31,7 @@ from beansprout.importer.processors.model_trainer import ModelTrainer
 from beansprout.quoter.commodity_finder import CommodityFinder
 from beansprout.quoter.quote_fetcher import QuoteFetcher
 from beansprout.quoter.quote_writer import QuoteWriter
+from beansprout.quoter.sources import cache_manager
 
 # Define static file paths for account mappings
 # Use absolute paths to ensure files are found regardless of working directory
@@ -232,9 +233,17 @@ def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
     type=click.Path(file_okay=False, resolve_path=True),
     default=os.getcwd(),
     help='Base directory for output files (default: current directory).')
+@click.option(
+    '--no-cache',
+    is_flag=True,
+    help='Disable caching of price quotes.')
+@click.option(
+    '--cache-file',
+    type=click.Path(dir_okay=False, resolve_path=True),
+    help='Path to the cache file (default: ~/.cache/beansprout/quote-cache.gdbm).')
 def _quote(filenames: List[str], date: Optional[datetime.datetime],
            inactive: bool, custom_only: bool, verbose: int, dry_run: bool,
-           destination: str) -> None:
+           destination: str, no_cache: bool, cache_file: Optional[str]) -> None:
     """Fetch price quotes for commodities using custom quoters.
     
     This command fetches price quotes for commodities defined in the given
@@ -244,6 +253,11 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     The command outputs price directives to files named:
     $destination/quotes/$symbol/YYYYmm.beancount
     where $symbol is the commodity symbol and YYYYmm is the year and month.
+    
+    Price quotes are cached by default to reduce network calls and improve performance.
+    The cache is stored at ~/.cache/beansprout/quote-cache.gdbm, and entries expire
+    after 24 hours. You can disable caching with --no-cache or specify a custom
+    cache file location with --cache-file.
     
     FILENAMES are one or more beancount files containing commodity definitions.
     """
@@ -303,26 +317,38 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     if verbose:
         click.echo(f"Using price date: {price_date}")
 
-    # Create the quote fetcher
-    fetcher = QuoteFetcher(custom_only=custom_only)
+    # Set up cache manager based on options
+    def open_cache():
+        if no_cache:
+            if verbose > 0:
+                click.echo("Cache disabled (--no-cache)")
+            return cache_manager.NullCacheManager()
+        else:
+            cache = cache_manager.DBMCacheManager(cache_file_path=cache_file)
+            if verbose > 0:
+                click.echo(f"Using cache at {cache.cache_file_path}")
+            return cache
 
-    # Fetch quotes for each active commodity
-    price_entries = []
-    for commodity in active_commodities:
-        if verbose > 1:
-            click.echo(f"Fetching quote for {commodity.currency}")
+    with open_cache() as cache:
+        fetcher = QuoteFetcher(custom_only=custom_only, cache_manager=cache)
 
-        price_entry = fetcher.fetch_quote(commodity=commodity,
-                                          quote_date=price_date)
-
-        if price_entry:
-            price_entries.append(price_entry)
+        # Fetch quotes for each active commodity
+        price_entries = []
+        for commodity in active_commodities:
             if verbose > 1:
-                click.echo(
-                    f"  Got price: {price_entry.amount} {price_entry.currency}"
-                )
-        elif verbose > 1:
-            click.echo(f"  No price found for {commodity.currency}")
+                click.echo(f"Fetching quote for {commodity.currency}")
+    
+            price_entry = fetcher.fetch_quote(commodity=commodity,
+                                              quote_date=price_date)
+    
+            if price_entry:
+                price_entries.append(price_entry)
+                if verbose > 1:
+                    click.echo(
+                        f"  Got price: {price_entry.amount} {price_entry.currency}"
+                    )
+            elif verbose > 1:
+                click.echo(f"  No price found for {commodity.currency}")
 
     if verbose:
         click.echo(f"Fetched {len(price_entries)} price entries")
