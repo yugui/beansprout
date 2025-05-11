@@ -64,9 +64,8 @@ def get_source(source_name: str,
     This function tries to load and instantiate a price source in the following order:
     1. Check if it's already loaded in SOURCES
     2. Try to load from beansprout.quoter.sources package with "beansprout.quoter.sources." prefix
-    3. Try to load from quoters package with "quoters." prefix (legacy support)
-    4. Try to load from beanprice.sources with "beanprice.sources." prefix (if custom_only is False)
-    5. Try to interpret the name as a full module path (if custom_only is False)
+    3. Try to load from beanprice.sources with "beanprice.sources." prefix (if custom_only is False)
+    4. Try to interpret the name as a full module path (if custom_only is False)
     
     Args:
         source_name: The name of the source to load
@@ -91,22 +90,6 @@ def get_source(source_name: str,
                 return source_class()
         except ImportError:
             _logger.debug(f"No source found in {sources_module_name}")
-
-    # 2. Try to load from legacy quoters package with "quoters." prefix (for backward compatibility)
-    legacy_module_name = f"quoters.{source_name}"
-    if legacy_module_name not in _TRIED_MODULES:
-        _TRIED_MODULES.add(legacy_module_name)
-        try:
-            module = importlib.import_module(legacy_module_name)
-            if hasattr(module, 'Source'):
-                source_class = getattr(module, 'Source')
-                SOURCES[source_name] = source_class
-                _logger.warning(
-                    f"Using legacy source from {legacy_module_name}. "
-                    f"Consider migrating to {sources_module_name}.")
-                return source_class()
-        except ImportError:
-            _logger.debug(f"No source found in {legacy_module_name}")
 
     # If custom_only is True, we stop here
     if custom_only:
