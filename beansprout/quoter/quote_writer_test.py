@@ -22,7 +22,7 @@ class QuoteWriterTest(unittest.TestCase):
     def setUp(self):
         """Set up a temporary directory for testing file output."""
         self.temp_dir = tempfile.mkdtemp()
-        self.writer = QuoteWriter(self.temp_dir, verbose=0)
+        self.writer = QuoteWriter(self.temp_dir)
 
     def tearDown(self):
         """Clean up temporary files and directories."""

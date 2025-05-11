@@ -22,24 +22,21 @@ class QuoteWriter:
     formatting the output.
     """
 
-    def __init__(self, destination_base: str, verbose: int = 0):
+    def __init__(self, destination_base: str):
         """Initialize a QuoteWriter with a base destination directory.
         
         Args:
             destination_base: The base directory for output files.
-            verbose: Verbosity level for logging (0=minimal, 1=info, 2+=debug).
         """
         self.destination_base = destination_base
-        self.verbose = verbose
         self.logger = logging.getLogger(__name__)
 
         # Create the quotes directory under the destination
         self.quotes_dir = os.path.join(destination_base, 'quotes')
         os.makedirs(self.quotes_dir, exist_ok=True)
 
-        if self.verbose > 1:
-            self.logger.debug(
-                f"Initialized quote writer with base path: {self.quotes_dir}")
+        self.logger.debug(
+            f"Initialized quote writer with base path: {self.quotes_dir}")
 
     def write_prices(self, prices: List[Price]) -> Dict[str, List[str]]:
         """Write price entries to appropriate destination files.
@@ -51,8 +48,7 @@ class QuoteWriter:
             A dictionary mapping commodity symbols to lists of created file paths.
         """
         if not prices:
-            if self.verbose > 0:
-                self.logger.info("No prices to write")
+            self.logger.info("No prices to write")
             return {}
 
         # Group and deduplicate price entries by commodity, month, and date
@@ -92,9 +88,8 @@ class QuoteWriter:
 
                 written_files[symbol].append(file_path)
 
-                if self.verbose > 1:
-                    self.logger.debug(
-                        f"Writing {len(prices_list)} prices to {file_path}")
+                self.logger.debug(
+                    f"Writing {len(prices_list)} prices to {file_path}")
 
                 # Write the prices to the file
                 with open(file_path, 'w') as f:
@@ -110,11 +105,10 @@ class QuoteWriter:
                         f.write(formatted_price)
                         f.write('\n')
 
-            if self.verbose > 0:
-                total_prices = sum(len(prices) for prices in months.values())
-                self.logger.info(
-                    f"Wrote {total_prices} prices for {symbol} to {len(months)} files"
-                )
+            total_prices = sum(len(prices) for prices in months.values())
+            self.logger.info(
+                f"Wrote {total_prices} prices for {symbol} to {len(months)} files"
+            )
 
         return written_files
 

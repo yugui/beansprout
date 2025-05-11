@@ -93,7 +93,7 @@ class DBMCacheManager(CacheManager):
         """Initialize the cache manager.
         
         Args:
-            cache_file_path: Path to the GDBM file. If None, uses default path.
+            cache_file_path: Path to the DBM file. If None, uses default path.
             ttl_seconds: Time-to-live for cached entries in seconds. Default 24h.
             max_entries: Maximum number of entries to store in the cache.
         """
@@ -104,7 +104,7 @@ class DBMCacheManager(CacheManager):
         if cache_file_path is None:
             home_dir = os.path.expanduser('~')
             cache_dir = os.path.join(home_dir, '.cache', 'beansprout')
-            cache_file_path = os.path.join(cache_dir, 'quote-cache.gdbm')
+            cache_file_path = os.path.join(cache_dir, 'quote-cache.dbm')
 
         self.cache_file_path = cache_file_path
 

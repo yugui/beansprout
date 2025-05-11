@@ -149,7 +149,7 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
     metavar='FILE',
     type=click.Path(resolve_path=True),
     help=
-    'Path to the account predictor model file. Defaults to the environment variable BEANGULP_ACCOUNT_PREDICTOR_PATH or ~/.cache/beangulp/account-prediction.pickle.'
+    'Path to the account predictor model file. Defaults to the environment variable BEANSPROUT_ACCOUNT_PREDICTOR_PATH or ~/.cache/beansprout/account-prediction.pickle.'
 )
 @click.pass_obj
 def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
@@ -168,8 +168,8 @@ def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
     # Determine the model path
     if not model_path:
         model_path = os.environ.get(
-            "BEANGULP_ACCOUNT_PREDICTOR_PATH",
-            os.path.expanduser("~/.cache/beangulp/account-prediction.pickle"))
+            "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
+            os.path.expanduser("~/.cache/beansprout/account-prediction.pickle"))
 
     # Load the account predictor model
     try:
@@ -233,17 +233,18 @@ def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
     type=click.Path(file_okay=False, resolve_path=True),
     default=os.getcwd(),
     help='Base directory for output files (default: current directory).')
-@click.option(
-    '--no-cache',
-    is_flag=True,
-    help='Disable caching of price quotes.')
+@click.option('--no-cache',
+              is_flag=True,
+              help='Disable caching of price quotes.')
 @click.option(
     '--cache-file',
     type=click.Path(dir_okay=False, resolve_path=True),
-    help='Path to the cache file (default: ~/.cache/beansprout/quote-cache.gdbm).')
+    help=
+    'Path to the cache file (default: ~/.cache/beansprout/quote-cache.dbm).')
 def _quote(filenames: List[str], date: Optional[datetime.datetime],
            inactive: bool, custom_only: bool, verbose: int, dry_run: bool,
-           destination: str, no_cache: bool, cache_file: Optional[str]) -> None:
+           destination: str, no_cache: bool,
+           cache_file: Optional[str]) -> None:
     """Fetch price quotes for commodities using custom quoters.
     
     This command fetches price quotes for commodities defined in the given
@@ -255,7 +256,7 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     where $symbol is the commodity symbol and YYYYmm is the year and month.
     
     Price quotes are cached by default to reduce network calls and improve performance.
-    The cache is stored at ~/.cache/beansprout/quote-cache.gdbm, and entries expire
+    The cache is stored at ~/.cache/beansprout/quote-cache.dbm, and entries expire
     after 24 hours. You can disable caching with --no-cache or specify a custom
     cache file location with --cache-file.
     
@@ -277,12 +278,10 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     all_entries: List[Directive] = []
     all_errors: List[str] = []
 
-    if verbose:
-        click.echo(f"Loading entries from {len(filenames)} file(s)")
+    logging.info(f"Loading entries from {len(filenames)} file(s)")
 
     for filename in filenames:
-        if verbose > 1:
-            click.echo(f"  Loading {filename}")
+        logging.debug(f"  Loading file: {filename}")
 
         entries, errors, options_map = loader.load_file(filename=filename)
         all_entries.extend(entries)
@@ -297,36 +296,30 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
 
     # Find all commodities
     all_commodities = finder.find_all_commodities(entries=all_entries)
-    if verbose:
-        click.echo(f"Found {len(all_commodities)} commodities")
+    logging.info(f"Found {len(all_commodities)} commodities")
 
     # Filter active commodities
     if not inactive:
         active_commodities = finder.filter_active_commodities(
             commodities=all_commodities)
-        if verbose:
-            click.echo(
-                f"Filtered to {len(active_commodities)} active commodities")
+        logging.info(
+            f"Filtered to {len(active_commodities)} active commodities")
     else:
         active_commodities = all_commodities
-        if verbose:
-            click.echo("Including all commodities (--inactive flag)")
+        logging.info("Including all commodities (--inactive flag set)")
 
     # Find the price date to use
     price_date = date.date() if date else datetime.date.today()
-    if verbose:
-        click.echo(f"Using price date: {price_date}")
+    logging.info(f"Using price date: {price_date}")
 
     # Set up cache manager based on options
     def open_cache():
         if no_cache:
-            if verbose > 0:
-                click.echo("Cache disabled (--no-cache)")
+            logging.info("Cache disabled (--no-cache)")
             return cache_manager.NullCacheManager()
         else:
             cache = cache_manager.DBMCacheManager(cache_file_path=cache_file)
-            if verbose > 0:
-                click.echo(f"Using cache at {cache.cache_file_path}")
+            logging.info(f"Using cache file: {cache.cache_file_path}")
             return cache
 
     with open_cache() as cache:
@@ -335,32 +328,29 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
         # Fetch quotes for each active commodity
         price_entries = []
         for commodity in active_commodities:
-            if verbose > 1:
-                click.echo(f"Fetching quote for {commodity.currency}")
-    
+            logging.debug(f"Fetching quote for {commodity.currency}")
+
             price_entry = fetcher.fetch_quote(commodity=commodity,
                                               quote_date=price_date)
-    
+
             if price_entry:
                 price_entries.append(price_entry)
-                if verbose > 1:
-                    click.echo(
-                        f"  Got price: {price_entry.amount} {price_entry.currency}"
-                    )
-            elif verbose > 1:
-                click.echo(f"  No price found for {commodity.currency}")
+                logging.debug(
+                    f"  Got price: {price_entry.amount} {price_entry.currency}"
+                )
+            else:
+                logging.warning(f"  No price found for {commodity.currency}")
 
-    if verbose:
-        click.echo(f"Fetched {len(price_entries)} price entries")
+    logging.info(f"Fetched {len(price_entries)} price entries")
 
     # Create quote writer for destination file management
-    writer = QuoteWriter(destination_base=destination, verbose=verbose)
+    writer = QuoteWriter(destination_base=destination)
 
     # Write price entries to destination files or print them in dry run mode
     if dry_run:
         click.echo("Dry run - printing price entries:")
         for price in price_entries:
-            click.echo(writer.format_price_for_display(price))
+            click.echo(printer.format_entry(price).rstrip())
     else:
         written_files = writer.write_prices(price_entries)
 
@@ -404,8 +394,8 @@ def main():
     # Load account predictor from pickle file
     # Check if the path is provided in an environment variable
     account_predictor_path = os.environ.get(
-        "BEANGULP_ACCOUNT_PREDICTOR_PATH",
-        os.path.expanduser("~/.cache/beangulp/account-prediction.pickle"))
+        "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
+        os.path.expanduser("~/.cache/beansprout/account-prediction.pickle"))
     try:
         account_predictor = AccountPredictor.load(account_predictor_path)
         print(f"Loaded account predictor from {account_predictor_path}")
