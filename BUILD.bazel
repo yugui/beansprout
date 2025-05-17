@@ -23,12 +23,13 @@ py_binary(
 
 # Package for top-level Python files
 py_package(
-    name = "beancount_pkg",
+    name = "beansprout_pkg",
     packages = [
         "bean_sprout",
         "beansprout",
         "data",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":bean-sprout",
     ],
@@ -47,6 +48,6 @@ py_wheel(
     requires_file = "//third_party:requirements.in",
     version = "0.1.0",
     deps = [
-        ":beancount_pkg",
+        ":beansprout_pkg",
     ],
 )
