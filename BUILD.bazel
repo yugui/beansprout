@@ -5,10 +5,6 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 py_binary(
     name = "bean-sprout",
     srcs = ["bean_sprout.py"],
-    data = [
-        "//data:expense_accounts.tsv",
-        "//data:income_accounts.tsv",
-    ],
     main = "bean_sprout.py",
     visibility = ["//visibility:public"],
     deps = [
@@ -27,7 +23,6 @@ py_package(
     packages = [
         "bean_sprout",
         "beansprout",
-        "data",
     ],
     visibility = ["//visibility:public"],
     deps = [
