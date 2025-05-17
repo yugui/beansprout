@@ -8,21 +8,9 @@ py_library(
     name = "importers",
     srcs = [
         "__init__.py",
-        "moneyforward.py",
     ],
     deps = [
-        "//beansprout/importer:account_predictor",
         "@beansprout_deps//beancount",
         "@beansprout_deps//beangulp",
-    ],
-)
-
-py_test(
-    name = "moneyforward_test",
-    srcs = ["moneyforward_test.py"],
-    deps = [
-        ":importers",
-        "//beansprout/importer:account_predictor",
-        "@beansprout_deps//beancount",
     ],
 )
