@@ -172,17 +172,9 @@ def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
             os.path.expanduser(
                 "~/.cache/beansprout/account-prediction.pickle"))
 
-    # Load the account predictor model
-    try:
-        account_predictor = AccountPredictor.load(model_path)
-        if not quiet:
-            click.echo(f"Loaded account predictor from {model_path}")
-    except FileNotFoundError:
-        if not quiet:
-            click.echo(
-                f"Account predictor file not found at {model_path}, creating a new one"
-            )
-        account_predictor = AccountPredictor(min_confidence=0.6)
+    # Use our lazy loading function with the specified path and quiet option
+    account_predictor = get_account_predictor(custom_path=model_path,
+                                              quiet=quiet)
 
     # Create a ModelTrainer instance
     processor = ModelTrainer(importers=ctx.importers,
@@ -444,24 +436,46 @@ class ExtendedIngest(beangulp.Ingest):
         self.cli.add_command(_quote)
 
 
+def get_account_predictor(custom_path=None, quiet=False):
+    """Get or lazily initialize the account predictor.
+    
+    Args:
+        custom_path: Optional custom path to the account predictor file.
+        quiet: If True, suppress output messages.
+        
+    Returns:
+        An AccountPredictor instance, either loaded from file or newly created.
+    """
+    # Check if we already have a cached instance
+    if not hasattr(get_account_predictor, "_instance"):
+        # Check if the path is provided in an environment variable
+        account_predictor_path = custom_path or os.environ.get(
+            "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
+            os.path.expanduser(
+                "~/.cache/beansprout/account-prediction.pickle"))
+        try:
+            predictor = AccountPredictor.load(account_predictor_path)
+            if not quiet:
+                print(
+                    f"Loaded account predictor from {account_predictor_path}")
+        except FileNotFoundError:
+            if not quiet:
+                print(
+                    f"Account predictor file not found at {account_predictor_path}, creating a new one"
+                )
+            predictor = AccountPredictor(min_confidence=0.6)
+        # Cache the instance
+        get_account_predictor._instance = predictor
+
+    return get_account_predictor._instance
+
+
 def main():
     # Load account mappings from TSV files
     expense_accounts = load_account_mappings(EXPENSE_ACCOUNTS_FILE)
     income_accounts = load_account_mappings(INCOME_ACCOUNTS_FILE)
 
-    # Load account predictor from pickle file
-    # Check if the path is provided in an environment variable
-    account_predictor_path = os.environ.get(
-        "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
-        os.path.expanduser("~/.cache/beansprout/account-prediction.pickle"))
-    try:
-        account_predictor = AccountPredictor.load(account_predictor_path)
-        print(f"Loaded account predictor from {account_predictor_path}")
-    except FileNotFoundError:
-        print(
-            f"Account predictor file not found at {account_predictor_path}, creating a new one"
-        )
-        account_predictor = AccountPredictor(min_confidence=0.6)
+    account_predictor = get_account_predictor(quiet=True)
 
     # Define a function to create a MoneyForward importer
     def create_mf_importer(wallet_account: str,
