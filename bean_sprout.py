@@ -2,8 +2,8 @@
 """Command-line tool for managing Beancount ledgers with Beansprout.
 
 This module provides the bean-sprout command with subcommands for importing,
-merging, training on transaction data, and fetching price quotes for commodities,
-all using the Beansprout directory structure conventions.
+merging, and fetching price quotes for commodities, all using the Beansprout
+directory structure conventions.
 """
 
 import os
@@ -21,10 +21,8 @@ from beancount.core.data import Directive, Entries, Commodity, Price
 from beancount.core import data
 from beanprice import source
 
-from beansprout.importer.account_predictor import AccountPredictor
 from beansprout.importer.merge import Processor, ImporterType
 from beansprout.importer.processors.file_writer import FileWriter
-from beansprout.importer.processors.model_trainer import ModelTrainer
 
 # Import the quote-related modules
 from beansprout.quoter.commodity_finder import CommodityFinder
@@ -74,6 +72,14 @@ def load_account_mappings(file_path):
               metavar='DIR',
               type=click.Path(exists=True, file_okay=False, resolve_path=True),
               help='The destination directory for extracted transactions.')
+@click.option(
+    '--existing-file',
+    '-e',
+    metavar='FILE',
+    type=click.Path(exists=True, dir_okay=False, resolve_path=True),
+    help=
+    'Path to a Beancount file with existing entries for training. Defaults to "ledger.beancount" in the current directory if it exists.'
+)
 @click.option('--reverse',
               '-r',
               is_flag=True,
@@ -91,7 +97,8 @@ def load_account_mappings(file_path):
     'Just print where the files would be written, without actually writing them.'
 )
 @click.pass_obj
-def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
+def _merge(ctx, src, destination, existing_file, reverse, failfast, quiet,
+           dry_run):
     """Extract transactions from documents and merge them with existing monthly files.
 
     Walk the SRC list of files or directories and extract the ledger
@@ -102,88 +109,19 @@ def _merge(ctx, src, destination, reverse, failfast, quiet, dry_run):
 
     Existing transactions are read from all beancount files under the destination
     directory whose base name matches the year-month of the extracted transactions.
+    
+    If --existing-file is specified, entries from this file will be used for training
+    the smart_importer account predictor. This defaults to "ledger.beancount" in the
+    current directory if it exists.
     """
     # Create a FileWriter instance
     processor = FileWriter(importers=ctx.importers,
                            destination=destination,
+                           existing_file=existing_file,
                            reverse=reverse,
                            failfast=failfast,
                            quiet=quiet,
                            dry_run=dry_run)
-
-    # Process the source files
-    status = processor.process(src)
-
-    # Exit with the appropriate status code
-    if status != 0:
-        sys.exit(status)
-
-
-@click.command('train')
-@click.argument('src',
-                nargs=-1,
-                type=click.Path(exists=True, resolve_path=True))
-@click.option('--ledger-directory',
-              '-d',
-              metavar='DIR',
-              type=click.Path(exists=True, file_okay=False, resolve_path=True),
-              help='The ledger directory containing existing transactions.')
-@click.option('--reverse',
-              '-r',
-              is_flag=True,
-              help='Sort entries in reverse order.')
-@click.option('--failfast',
-              '-x',
-              is_flag=True,
-              help='Stop processing at the first error.')
-@click.option('--quiet', '-q', count=True, help='Suppress all output.')
-@click.option(
-    '--dry-run',
-    '-n',
-    is_flag=True,
-    help='Just analyze prediction failures without updating the model.')
-@click.option(
-    '--model-path',
-    '-m',
-    metavar='FILE',
-    type=click.Path(resolve_path=True),
-    help=
-    'Path to the account predictor model file. Defaults to the environment variable BEANSPROUT_ACCOUNT_PREDICTOR_PATH or ~/.cache/beansprout/account-prediction.pickle.'
-)
-@click.pass_obj
-def _train(ctx, src, ledger_directory, reverse, failfast, quiet, dry_run,
-           model_path):
-    """Train the account predictor model based on prediction failures.
-
-    Walk the SRC list of files or directories and extract the ledger
-    entries from each file identified by one of the configured
-    importers. Compare the extracted transactions with existing duplicate
-    transactions to detect prediction failures. Update the account predictor
-    model using the correct accounts from the existing transactions.
-
-    This command is useful for improving the accuracy of account predictions
-    by learning from existing manually corrected transactions.
-    """
-    # Determine the model path
-    if not model_path:
-        model_path = os.environ.get(
-            "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
-            os.path.expanduser(
-                "~/.cache/beansprout/account-prediction.pickle"))
-
-    # Use our lazy loading function with the specified path and quiet option
-    account_predictor = get_account_predictor(custom_path=model_path,
-                                              quiet=quiet)
-
-    # Create a ModelTrainer instance
-    processor = ModelTrainer(importers=ctx.importers,
-                             account_predictor=account_predictor,
-                             account_predictor_path=model_path,
-                             ledger_directory=ledger_directory,
-                             reverse=reverse,
-                             failfast=failfast,
-                             quiet=quiet,
-                             dry_run=dry_run)
 
     # Process the source files
     status = processor.process(src)
@@ -428,45 +366,8 @@ class ExtendedIngest(beangulp.Ingest):
         # Add the merge command
         self.cli.add_command(_merge)
 
-        # Add the train command
-        self.cli.add_command(_train)
-
         # Add the quote command
         self.cli.add_command(_quote)
-
-
-def get_account_predictor(custom_path=None, quiet=False):
-    """Get or lazily initialize the account predictor.
-    
-    Args:
-        custom_path: Optional custom path to the account predictor file.
-        quiet: If True, suppress output messages.
-        
-    Returns:
-        An AccountPredictor instance, either loaded from file or newly created.
-    """
-    # Check if we already have a cached instance
-    if not hasattr(get_account_predictor, "_instance"):
-        # Check if the path is provided in an environment variable
-        account_predictor_path = custom_path or os.environ.get(
-            "BEANSPROUT_ACCOUNT_PREDICTOR_PATH",
-            os.path.expanduser(
-                "~/.cache/beansprout/account-prediction.pickle"))
-        try:
-            predictor = AccountPredictor.load(account_predictor_path)
-            if not quiet:
-                print(
-                    f"Loaded account predictor from {account_predictor_path}")
-        except FileNotFoundError:
-            if not quiet:
-                print(
-                    f"Account predictor file not found at {account_predictor_path}, creating a new one"
-                )
-            predictor = AccountPredictor(min_confidence=0.6)
-        # Cache the instance
-        get_account_predictor._instance = predictor
-
-    return get_account_predictor._instance
 
 
 def main():
@@ -475,6 +376,37 @@ def main():
 
     # Define hooks for post-processing
     hooks = []
+
+    # Apply smart_importer if enabled (default to True)
+    use_smart_importer = os.environ.get("BEANSPROUT_USE_SMART_IMPORTER",
+                                        "1") == "1"
+    if use_smart_importer:
+        from smart_importer import PredictPostings
+        from smart_importer.hooks import apply_hooks
+
+        # Configure weights if provided
+        weights_str = os.environ.get("BEANSPROUT_SMART_IMPORTER_WEIGHTS", "")
+        weights = None
+        if weights_str:
+            try:
+                weights = eval(weights_str)  # Convert string to dict
+                if not isinstance(weights, dict):
+                    weights = None
+            except:
+                pass
+
+        # Apply PredictPostings decorator to all importers
+        decorated_importers = []
+        for importer in importers:
+            # Create PredictPostings with custom weights if provided
+            predictor = PredictPostings(
+                weights=weights) if weights else PredictPostings()
+
+            # Apply decorator
+            decorated_importer = apply_hooks(importer, [predictor])
+            decorated_importers.append(decorated_importer)
+
+        importers = decorated_importers
 
     # Create and run the ingest command using our extended version
     ingest = ExtendedIngest(importers, hooks)

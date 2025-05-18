@@ -6,14 +6,6 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "account_predictor",
-    srcs = ["account_predictor.py"],
-    deps = [
-        ":tokenizer",
-    ],
-)
-
-py_library(
     name = "tokenizer",
     srcs = ["tokenizer.py"],
 )
@@ -24,6 +16,7 @@ py_library(
     deps = [
         requirement("beancount"),
         requirement("beangulp"),
+        requirement("smart_importer"),
     ],
 )
 
@@ -31,19 +24,10 @@ py_library(
     name = "importer",
     srcs = ["__init__.py"],
     deps = [
-        ":account_predictor",
         ":merge",
         ":tokenizer",
         "//beansprout/importer/importers",
         "//beansprout/importer/processors",
-    ],
-)
-
-py_test(
-    name = "account_predictor_test",
-    srcs = ["account_predictor_test.py"],
-    deps = [
-        ":account_predictor",
     ],
 )
 

@@ -27,9 +27,24 @@ class FileWriter(Processor):
         dry_run: Whether to perform a dry run without writing files.
     """
 
+    def get_duplicate(self, entry):
+        """Get the duplicate entry from an entry's metadata.
+        
+        Args:
+            entry: The entry to check for duplicate metadata.
+            
+        Returns:
+            The entry itself if it's a duplicate, None otherwise.
+        """
+        if hasattr(entry,
+                   'meta') and entry.meta and '__duplicate__' in entry.meta:
+            return entry
+        return None
+
     def __init__(self,
                  importers,
                  destination=None,
+                 existing_file=None,
                  reverse=False,
                  failfast=False,
                  quiet=0,
@@ -39,12 +54,15 @@ class FileWriter(Processor):
         Args:
             importers: List of importers to use for extracting transactions.
             destination: The destination directory for extracted transactions.
+            existing_file: Path to a Beancount file with existing entries for training.
+                           Defaults to "ledger.beancount" in the current directory if it exists.
             reverse: Whether to sort entries in reverse order.
             failfast: Whether to stop processing at the first error.
             quiet: Level of output suppression (0 for normal output, higher for less output).
             dry_run: Whether to perform a dry run without writing files.
         """
-        super().__init__(importers, destination, reverse, failfast, quiet)
+        super().__init__(importers, destination, existing_file, reverse,
+                         failfast, quiet)
         self.dry_run = dry_run
 
     def process_output(self, entries_by_account_month: Dict[Tuple[

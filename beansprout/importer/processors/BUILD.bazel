@@ -11,7 +11,6 @@ py_library(
         "__init__.py",
         "base.py",
         "file_writer.py",
-        "model_trainer.py",
     ],
     deps = [
         "//beansprout/importer:merge",

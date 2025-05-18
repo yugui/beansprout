@@ -39,6 +39,7 @@ class Processor(abc.ABC, Generic[ImporterType]):
     def __init__(self,
                  importers: List[ImporterType],
                  destination: Optional[str] = None,
+                 existing_file: Optional[str] = None,
                  reverse: bool = False,
                  failfast: bool = False,
                  quiet: int = 0):
@@ -47,6 +48,8 @@ class Processor(abc.ABC, Generic[ImporterType]):
         Args:
             importers: List of importers to use for extracting transactions.
             destination: The destination directory for extracted transactions.
+            existing_file: Path to a Beancount file with existing entries for training.
+                           Defaults to "ledger.beancount" in the current directory if it exists.
             reverse: Whether to sort entries in reverse order.
             failfast: Whether to stop processing at the first error.
             quiet: Level of output suppression (0 for normal output, higher for less output).
@@ -58,6 +61,23 @@ class Processor(abc.ABC, Generic[ImporterType]):
         self.quiet = quiet
         self.log = beangulp.utils.logger(-quiet, err=True)
         self.errors = beangulp.exceptions.ExceptionsTrap(self.log)
+
+        # Load existing entries for training if a file is provided or default exists
+        self.existing_entries = []
+        if existing_file is None:
+            # Check for default ledger file
+            default_file = os.path.join(os.getcwd(), "ledger.beancount")
+            if os.path.exists(default_file):
+                existing_file = default_file
+
+        if existing_file and os.path.exists(existing_file):
+            try:
+                self.existing_entries, _, _ = loader.load_file(existing_file)
+                self.log(
+                    f"Loaded {len(self.existing_entries)} existing entries from {existing_file} for training"
+                )
+            except Exception as e:
+                self.log(f'Warning: Could not load {existing_file}: {e}')
 
     def get_account_file_path(self, account: str, year_month: str) -> str:
         """Construct the file path for an account and year-month based on Beansprout directory structure.
@@ -158,9 +178,9 @@ class Processor(abc.ABC, Generic[ImporterType]):
                 # Get the account for this file
                 account = importer.account(filename)
 
-                # Extract entries from the file (without deduplication yet)
+                # Extract entries from the file, passing existing entries for training
                 entries = beangulp.extract.extract_from_file(
-                    importer, filename, [])
+                    importer, filename, self.existing_entries)
 
                 if not entries:
                     self.log(' (no entries)')
