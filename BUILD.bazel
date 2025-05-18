@@ -12,6 +12,7 @@ py_binary(
         requirement("beancount"),
         requirement("beangulp"),
         requirement("beanprice"),
+        "//beansprout/config",
         "//beansprout/importer",
         "//beansprout/quoter",
     ],

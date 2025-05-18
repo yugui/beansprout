@@ -21,10 +21,9 @@ from beancount.core.data import Directive, Entries, Commodity, Price
 from beancount.core import data
 from beanprice import source
 
+from beansprout.config import load_config
 from beansprout.importer.merge import Processor, ImporterType
 from beansprout.importer.processors.file_writer import FileWriter
-
-# Import the quote-related modules
 from beansprout.quoter.commodity_finder import CommodityFinder
 from beansprout.quoter.quote_fetcher import QuoteFetcher
 from beansprout.quoter.quote_writer import QuoteWriter
@@ -461,8 +460,9 @@ class ExtendedIngest(beangulp.Ingest):
 
 
 def main():
-    # Define importers
-    importers = []
+    config = load_config()
+
+    importers = config.importers
 
     # Define hooks for post-processing
     hooks = []

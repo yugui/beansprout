@@ -1,0 +1,25 @@
+"""Build rules for the beansprout config package."""
+
+load("@beansprout_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "config",
+    srcs = ["__init__.py"],
+    deps = [
+        requirement("beancount"),
+        "//beansprout/importer",
+    ],
+)
+
+py_test(
+    name = "config_test",
+    srcs = ["__init___test.py"],
+    main = "__init___test.py",
+    deps = [
+        ":config",
+        requirement("beancount"),
+    ],
+)
