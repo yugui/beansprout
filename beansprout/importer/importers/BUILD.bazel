@@ -1,5 +1,6 @@
 """Build rules for the specific importers implementations."""
 
+load("@beansprout_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -10,7 +11,7 @@ py_library(
         "__init__.py",
     ],
     deps = [
-        "@beansprout_deps//beancount",
-        "@beansprout_deps//beangulp",
+        requirement("beancount"),
+        requirement("beangulp"),
     ],
 )

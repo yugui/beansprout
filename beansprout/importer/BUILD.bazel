@@ -1,5 +1,6 @@
 """Build rules for the beansprout importers package."""
 
+load("@beansprout_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -21,8 +22,8 @@ py_library(
     name = "merge",
     srcs = ["merge.py"],
     deps = [
-        "@beansprout_deps//beancount",
-        "@beansprout_deps//beangulp",
+        requirement("beancount"),
+        requirement("beangulp"),
     ],
 )
 
@@ -51,7 +52,7 @@ py_test(
     srcs = ["merge_test.py"],
     deps = [
         ":merge",
-        "@beansprout_deps//beancount",
+        requirement("beancount"),
     ],
 )
 
