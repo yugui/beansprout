@@ -36,9 +36,8 @@ class FileWriter(Processor):
         Returns:
             The entry itself if it's a duplicate, None otherwise.
         """
-        if hasattr(entry,
-                   'meta') and entry.meta and '__duplicate__' in entry.meta:
-            return entry
+        if entry.meta and '__duplicate__' in entry.meta:
+            return entry.meta['__duplicate__']
         return None
 
     def __init__(self,
