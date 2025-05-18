@@ -65,12 +65,29 @@ def load_account_mappings(file_path):
 
 def complete_existing_file(existing_file: Optional[str],
                            destination: Optional[str] = None) -> str:
+    """Complete the existing file path with a default if not provided.
+    
+    Args:
+        existing_file: The existing file path, if provided.
+        destination: The destination directory, used to construct the default path.
+        
+    Returns:
+        The completed file path, either the provided path or a default.
+    """
     if existing_file:
         return existing_file
     return os.path.join(complete_destination(destination), "ledger.beancount")
 
 
 def complete_destination(destination: Optional[str]) -> str:
+    """Complete the destination directory path with a default if not provided.
+    
+    Args:
+        destination: The destination directory path, if provided.
+        
+    Returns:
+        The completed directory path, either the provided path or a default.
+    """
     if destination:
         return destination
     os.path.join(os.getcwd(), "transactions")

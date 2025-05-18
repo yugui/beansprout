@@ -74,11 +74,11 @@ def get_source(source_name: str,
     Returns:
         An instance of the Source class if found, None otherwise
     """
-    # First check if it's a source we've already loaded
+    # 1. Check if it's a source we've already loaded
     if source_name in SOURCES:
         return SOURCES[source_name]()
 
-    # 1. Try to load from beansprout.quoter.sources package
+    # 2. Try to load from beansprout.quoter.sources package
     sources_module_name = f"beansprout.quoter.sources.{source_name}"
     if sources_module_name not in _TRIED_MODULES:
         _TRIED_MODULES.add(sources_module_name)

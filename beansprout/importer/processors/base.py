@@ -13,13 +13,13 @@ class Processor(BaseProcessor):
     """Base class for processors that process imported transaction data."""
 
     def get_duplicate(self, entry: Directive) -> Optional[Directive]:
-        """Get the duplicate entry if it exists.
-
+        """Get the duplicate entry from an entry's metadata.
+        
         Args:
-            entry: The entry to check for duplicates.
-
+            entry: The entry to check for duplicate metadata.
+            
         Returns:
-            The duplicate entry if found, None otherwise.
+            The entry itself if it's a duplicate, None otherwise.
         """
         if hasattr(
                 entry, 'meta'

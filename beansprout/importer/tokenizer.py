@@ -55,7 +55,14 @@ class Tokenizer:
         return tokens
 
     def _split_japanese(self, text: str) -> List[str]:
-        """Split Japanese text into character-wise bigrams."""
+        """Split Japanese text into character-wise bigrams.
+        
+        Args:
+            text: The Japanese text to split.
+            
+        Returns:
+            A list of character bigrams.
+        """
         if len(text) < 2:
             return [text]
         # Split the text into characters
@@ -66,6 +73,13 @@ class Tokenizer:
         return [''.join(bigram) for bigram in bigrams]
 
     def _split_non_japanese(self, text: str) -> List[str]:
-        """Split non-Japanese text at non-alphanumeric characters."""
+        """Split non-Japanese text at non-alphanumeric characters.
+        
+        Args:
+            text: The non-Japanese text to split.
+            
+        Returns:
+            A list of alphanumeric tokens.
+        """
         seq = re.split(r'[^a-zA-Z0-9]+', text)
         return [s for s in seq if s]
