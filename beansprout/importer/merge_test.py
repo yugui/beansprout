@@ -94,6 +94,10 @@ class TestProcessor(unittest.TestCase):
         """Concrete implementation of Processor for testing."""
 
         def __init__(self, *args, **kwargs):
+            # Add existing_file parameter if not present or set to None
+            if 'existing_file' not in kwargs or kwargs['existing_file'] is None:
+                # Use an empty string as the default
+                kwargs['existing_file'] = ""
             super().__init__(*args, **kwargs)
             self.output_called = False
             self.output_args = None
@@ -147,8 +151,7 @@ class TestProcessor(unittest.TestCase):
         processor = self.ConcreteProcessor(importers=[self.mock_importer],
                                            destination=self.dest_dir,
                                            reverse=False,
-                                           failfast=False,
-                                           quiet=0)
+                                           failfast=False)
 
         # Process the source file
         status = processor.process([self.source_file])
@@ -231,8 +234,7 @@ class TestProcessor(unittest.TestCase):
         processor = self.ConcreteProcessor(importers=[self.mock_importer],
                                            destination=self.dest_dir,
                                            reverse=False,
-                                           failfast=False,
-                                           quiet=0)
+                                           failfast=False)
 
         # Process the source file
         status = processor.process([self.source_file])
@@ -364,8 +366,7 @@ class TestProcessor(unittest.TestCase):
         processor = self.ConcreteProcessor(importers=[self.mock_importer],
                                            destination=self.dest_dir,
                                            reverse=False,
-                                           failfast=False,
-                                           quiet=0)
+                                           failfast=False)
 
         # Process the source file
         status = processor.process([self.source_file])

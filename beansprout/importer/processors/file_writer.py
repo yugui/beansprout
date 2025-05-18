@@ -61,8 +61,9 @@ class FileWriter(Processor):
             dry_run: Whether to perform a dry run without writing files.
         """
         super().__init__(importers, destination, existing_file, reverse,
-                         failfast, quiet)
+                         failfast)
         self.dry_run = dry_run
+        self.quiet = quiet
 
     def process_output(self, entries_by_account_month: Dict[Tuple[
         str, str], List[Tuple[Directive, ImporterType]]],

@@ -63,6 +63,19 @@ def load_account_mappings(file_path):
     return mappings
 
 
+def complete_existing_file(existing_file: Optional[str],
+                           destination: Optional[str] = None) -> str:
+    if existing_file:
+        return existing_file
+    return os.path.join(complete_destination(destination), "ledger.beancount")
+
+
+def complete_destination(destination: Optional[str]) -> str:
+    if destination:
+        return destination
+    os.path.join(os.getcwd(), "transactions")
+
+
 @click.command('merge')
 @click.argument('src',
                 nargs=-1,
@@ -70,6 +83,7 @@ def load_account_mappings(file_path):
 @click.option('--destination',
               '-o',
               metavar='DIR',
+              default=os.getcwd(),
               type=click.Path(exists=True, file_okay=False, resolve_path=True),
               help='The destination directory for extracted transactions.')
 @click.option(
@@ -89,6 +103,7 @@ def load_account_mappings(file_path):
               is_flag=True,
               help='Stop processing at the first error.')
 @click.option('--quiet', '-q', count=True, help='Suppress all output.')
+@click.option('--verbose', '-v', count=True, help='Print verbose information.')
 @click.option(
     '--dry-run',
     '-n',
@@ -97,8 +112,8 @@ def load_account_mappings(file_path):
     'Just print where the files would be written, without actually writing them.'
 )
 @click.pass_obj
-def _merge(ctx, src, destination, existing_file, reverse, failfast, quiet,
-           dry_run):
+def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
+           quiet, dry_run):
     """Extract transactions from documents and merge them with existing monthly files.
 
     Walk the SRC list of files or directories and extract the ledger
@@ -114,10 +129,23 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, quiet,
     the smart_importer account predictor. This defaults to "ledger.beancount" in the
     current directory if it exists.
     """
+
+    # Set up logging
+    logging_level = logging.WARNING
+    if verbose == 1:
+        logging_level = logging.INFO
+    elif verbose >= 2:
+        logging_level = logging.DEBUG
+    elif quiet > 0:
+        logging_level = logging.ERROR
+    logging.basicConfig(level=logging_level,
+                        format='%(levelname)s: %(message)s')
+
     # Create a FileWriter instance
     processor = FileWriter(importers=ctx.importers,
-                           destination=destination,
-                           existing_file=existing_file,
+                           destination=complete_destination(destination),
+                           existing_file=complete_existing_file(
+                               existing_file, destination),
                            reverse=reverse,
                            failfast=failfast,
                            quiet=quiet,
@@ -332,16 +360,61 @@ def _archive(ctx, src, destination, overwrite, dry_run, failfast, quiet):
     structure: {destination_dir}/transactions/{account_hierarchy}/{filename}
     """
     # Modify the destination to include the "transactions" prefix
-    modified_destination = None
-    if destination:
-        modified_destination = os.path.join(destination, "transactions")
-    else:
-        modified_destination = os.path.join(os.getcwd(), "transactions")
+    modified_destination = os.path.join(complete_destination(destination),
+                                        "transactions")
 
     # Call the original beangulp._archive function with the modified destination
     from beangulp import _archive as beangulp_archive
     return beangulp_archive(ctx, src, modified_destination, overwrite, dry_run,
                             failfast, quiet)
+
+
+@click.command('extract')
+@click.argument('src',
+                nargs=-1,
+                type=click.Path(exists=True, resolve_path=True))
+@click.option('--output',
+              '-o',
+              type=click.File('w'),
+              default='-',
+              help='Output file.')
+@click.option('--existing',
+              '-e',
+              type=click.Path(exists=True),
+              help='Existing Beancount ledger for de-duplication.')
+@click.option('--reverse',
+              '-r',
+              is_flag=True,
+              help='Sort entries in reverse order.')
+@click.option('--failfast',
+              '-x',
+              is_flag=True,
+              help='Stop processing at the first error.')
+@click.option('--verbose',
+              '-v',
+              count=True,
+              help='Print verbose information about the process.')
+@click.option('--quiet', '-q', count=True, help='Suppress all output.')
+@click.pass_obj
+def _extract(ctx, src, output, existing, reverse, failfast, verbose, quiet):
+    existing = complete_existing_file(existing)
+
+    # Set up logging
+    logging_level = logging.WARNING
+    if verbose == 1:
+        quiet = 0
+        logging_level = logging.INFO
+    elif verbose >= 2:
+        quiet = 0
+        logging_level = logging.DEBUG
+    elif quiet > 0:
+        logging_level = logging.ERROR
+    logging.basicConfig(level=logging_level,
+                        format='%(levelname)s: %(message)s')
+
+    from beangulp import _extract as beangulp_extract
+    return beangulp_extract(ctx, src, output, existing, reverse, failfast,
+                            quiet)
 
 
 class ExtendedIngest(beangulp.Ingest):

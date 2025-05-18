@@ -8,6 +8,7 @@ process while allowing customization of the final output phase.
 
 import os
 import abc
+import logging
 import sys
 from typing import Dict, List, Set, Tuple, Optional, TypeVar, Generic
 
@@ -38,11 +39,10 @@ class Processor(abc.ABC, Generic[ImporterType]):
 
     def __init__(self,
                  importers: List[ImporterType],
-                 destination: Optional[str] = None,
-                 existing_file: Optional[str] = None,
+                 destination: str,
+                 existing_file: str,
                  reverse: bool = False,
-                 failfast: bool = False,
-                 quiet: int = 0):
+                 failfast: bool = False):
         """Initialize the Processor.
         
         Args:
@@ -55,29 +55,24 @@ class Processor(abc.ABC, Generic[ImporterType]):
             quiet: Level of output suppression (0 for normal output, higher for less output).
         """
         self.importers = importers
-        self.destination = destination or os.getcwd()
+        self.destination = destination
         self.reverse = reverse
         self.failfast = failfast
-        self.quiet = quiet
-        self.log = beangulp.utils.logger(-quiet, err=True)
+        self.logger = logging.getLogger(__name__)
+        self.log = beangulp.utils.logger(verbosity=(self.logger.level + 20) //
+                                         10)
         self.errors = beangulp.exceptions.ExceptionsTrap(self.log)
 
         # Load existing entries for training if a file is provided or default exists
         self.existing_entries = []
-        if existing_file is None:
-            # Check for default ledger file
-            default_file = os.path.join(os.getcwd(), "ledger.beancount")
-            if os.path.exists(default_file):
-                existing_file = default_file
-
-        if existing_file and os.path.exists(existing_file):
+        if os.path.exists(existing_file):
             try:
                 self.existing_entries, _, _ = loader.load_file(existing_file)
-                self.log(
+                self.logger.debug(
                     f"Loaded {len(self.existing_entries)} existing entries from {existing_file} for training"
                 )
             except Exception as e:
-                self.log(f'Warning: Could not load {existing_file}: {e}')
+                self.logger.warning(f"Could not load {existing_file}: {e}")
 
     def get_account_file_path(self, account: str, year_month: str) -> str:
         """Construct the file path for an account and year-month based on Beansprout directory structure.
@@ -234,13 +229,12 @@ class Processor(abc.ABC, Generic[ImporterType]):
 
                             # Add to the collection of all existing entries for deduplication
                             existing_entries.extend(entries)
-                            self.log(
+                            self.logger.debug(
                                 f"Loaded {len(entries)} existing entries from {existing_file}"
                             )
                         except Exception as e:
-                            self.log(
-                                f'Warning: Could not load {existing_file}: {e}'
-                            )
+                            self.logger.warning(
+                                f'Could not load {existing_file}: {e}')
 
             existing_entries_by_year_month[year_month] = existing_entries
 
