@@ -1,3 +1,4 @@
 beancount>=3.1.0
 beangulp>=0.2.0
 beanprice>=2.0.0
+smart_importer>=0.6
