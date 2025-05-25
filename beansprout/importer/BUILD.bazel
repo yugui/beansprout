@@ -26,7 +26,6 @@ py_library(
     deps = [
         ":merge",
         ":tokenizer",
-        "//beansprout/importer/importers",
         "//beansprout/importer/processors",
     ],
 )

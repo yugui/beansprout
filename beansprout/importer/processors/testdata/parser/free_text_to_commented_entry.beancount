@@ -1,0 +1,6 @@
+This is some free text
+that precedes a commented entry
+with multiple lines
+; 2025-04-15 * "Commented Payee" "Commented Transaction"
+;   Assets:Cash:Wallet  -500 JPY
+;   Expenses:Food        500 JPY

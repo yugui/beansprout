@@ -1,0 +1,12 @@
+2025-04-20 ! "Payee C" "Transaction"
+    Assets:Cash:Wallet -500 JPY
+
+2025-04-26 ! "Payee D" "Transaction"
+    Assets:Cash:Wallet -550 JPY
+
+2025-04-15 * "Test Payee" "Test Transaction"
+    Assets:Cash:Wallet -1000 JPY
+    Expenses:Food       1000 JPY
+
+2025-04-10 ! "Payee A" "Existing Transaction"
+    Assets:Cash:Wallet -500 JPY

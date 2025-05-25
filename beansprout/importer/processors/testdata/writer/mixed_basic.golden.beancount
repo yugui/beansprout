@@ -1,0 +1,34 @@
+;; -*- mode: beancount -*-
+; Transactions for Assets:Cash:Wallet 202504
+
+; This is a comment that should be preserved
+
+* This is a free text line that should be preserved
+
+2025-04-10 * "Payee A" "Existing Transaction"
+    Assets:Cash:Wallet -500 JPY
+    ; For gift
+    Expenses:Social
+
+; Another comment that should be preserved
+Another free text line that should be preserved
+
+2025-04-15 * "Payee B" "Another Transaction"
+    Assets:Cash:Wallet      -150 JPY
+    Expenses:Food            150 JPY
+   
+2025-04-15 * "" "Another Transaction"
+    Assets:Cash:Wallet
+    Assets:Reimburseable 150 JPY
+
+2025-04-15 * "Test Payee" "Test Transaction"
+  Assets:Cash:Wallet  -1000 JPY
+  Expenses:Food        1000 JPY
+
+2025-04-20 * "" "Reimbersement Transaction"
+    Assets:Cash:Wallet 150 JPY
+    Assets:Reimburseable
+
+; 2025-04-20 * "Payee C" "Transaction"
+;    Assets:Cash:Wallet -500 JPY
+;    Assets:Food

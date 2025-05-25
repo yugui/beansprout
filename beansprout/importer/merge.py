@@ -12,10 +12,9 @@ import logging
 import sys
 from typing import Dict, List, Set, Tuple, Optional, TypeVar, Generic
 
+import beancount
 import beangulp
-from beancount import loader
-from beancount.core import data
-from beancount.core.data import Directive, Entries
+from beancount import Directive, Directives
 
 # Type for importers
 ImporterType = TypeVar('ImporterType', bound=beangulp.Importer)
@@ -67,7 +66,8 @@ class Processor(abc.ABC, Generic[ImporterType]):
         self.existing_entries = []
         if os.path.exists(existing_file):
             try:
-                self.existing_entries, _, _ = loader.load_file(existing_file)
+                self.existing_entries, _, _ = beancount.load_file(
+                    existing_file)
                 self.logger.debug(
                     f"Loaded {len(self.existing_entries)} existing entries from {existing_file} for training"
                 )
@@ -122,25 +122,21 @@ class Processor(abc.ABC, Generic[ImporterType]):
         # Phase 2: Sort the extracted entries
         beangulp.extract.sort_extracted_entries(extracted)
 
-        # Phase 3: Read existing transactions for each year-month
-        existing_entries_by_year_month, entries_by_dest_file = self._read_existing_transactions(
-            year_months)
+        # Phase 3: Deduplicate extracted entries against existing entries
+        self._mark_duplicate_entries(extracted)
 
-        # Phase 4: Deduplicate extracted entries against existing entries
-        self._deduplicate_entries(extracted, existing_entries_by_year_month)
-
-        # Phase 5: Group entries by account and year-month, preserving importer information
+        # Phase 4: Group entries by account and year-month, preserving importer information
         entries_by_account_month = self._group_entries_by_account_month(
             extracted)
 
-        # Phase 6: Process output (abstract method to be implemented by subclasses)
-        self.process_output(entries_by_account_month, entries_by_dest_file)
+        # Phase 5: Process output (abstract method to be implemented by subclasses)
+        self.process_output(entries_by_account_month)
 
         return 0 if not self.errors else 1
 
     def _extract_transactions(
         self, src: List[str]
-    ) -> Tuple[List[Tuple[str, Entries, str, ImporterType]], Set[str]]:
+    ) -> Tuple[List[Tuple[str, Directives, str, ImporterType]], Set[str]]:
         """Walk the source files and extract transactions.
         
         Args:
@@ -194,82 +190,24 @@ class Processor(abc.ABC, Generic[ImporterType]):
 
         return extracted, year_months
 
-    def _read_existing_transactions(
-        self, year_months: Set[str]
-    ) -> Tuple[Dict[str, Entries], Dict[str, Entries]]:
-        """Read existing transactions for each year-month.
-        
-        Args:
-            year_months: Set of distinct year-months to read transactions for.
-            
-        Returns:
-            A tuple containing:
-            - A dictionary mapping year-months to lists of existing entries
-            - A dictionary mapping destination file paths to lists of existing entries
-        """
-        existing_entries_by_year_month: Dict[str, Entries] = {}
-        # Also track entries by destination file path for merging later
-        entries_by_dest_file: Dict[str, Entries] = {}
-
-        for year_month in sorted(year_months):
-            # Find all beancount files with matching year-month in the destination directory
-            existing_entries: Entries = []
-
-            # Look for transactions directory at the root level
-            transactions_dir = os.path.join(self.destination, "transactions")
-            if os.path.exists(transactions_dir):
-                for root, dirs, files in os.walk(transactions_dir):
-                    for file in files:
-                        existing_file = os.path.join(root, file)
-                        try:
-                            entries, _, _ = loader.load_file(existing_file)
-
-                            # Store entries by file path for merging later
-                            entries_by_dest_file[existing_file] = entries
-
-                            # Add to the collection of all existing entries for deduplication
-                            existing_entries.extend(entries)
-                            self.logger.debug(
-                                f"Loaded {len(entries)} existing entries from {existing_file}"
-                            )
-                        except Exception as e:
-                            self.logger.warning(
-                                f'Could not load {existing_file}: {e}')
-
-            existing_entries_by_year_month[year_month] = existing_entries
-
-        return existing_entries_by_year_month, entries_by_dest_file
-
-    def _deduplicate_entries(
-            self, extracted: List[Tuple[str, Entries, str, ImporterType]],
-            existing_entries_by_year_month: Dict[str, Entries]) -> None:
+    def _mark_duplicate_entries(self,
+                                extracted: List[Tuple[str, Directives, str,
+                                                      ImporterType]]):
         """Deduplicate extracted entries against existing entries.
         
         Args:
             extracted: List of tuples (filename, entries, account, importer)
             existing_entries_by_year_month: Dictionary mapping year-months to lists of existing entries
         """
+
+        existing_entries = self.existing_entries.copy()
         for filename, entries, account, importer in extracted:
-            # Group entries by year-month
-            entries_by_year_month: Dict[str, Entries] = {}
-            for entry in entries:
-                year_month = entry.date.strftime("%Y%m")
-                if year_month not in entries_by_year_month:
-                    entries_by_year_month[year_month] = []
-                entries_by_year_month[year_month].append(entry)
-
-            # Deduplicate entries for each year-month
-            for year_month, month_entries in entries_by_year_month.items():
-                existing = existing_entries_by_year_month.get(year_month, [])
-                # Mark duplicate entries
-                importer.deduplicate(month_entries, existing)
-
-                # Note: We keep entries that are marked as duplicates
-                # They are marked by setting the '__duplicate__' metadata
-                # but we don't remove them here
+            # Mark duplicate entries
+            importer.deduplicate(entries, existing_entries)
+            existing_entries.extend(entries)
 
     def _group_entries_by_account_month(
-        self, extracted: List[Tuple[str, Entries, str, ImporterType]]
+        self, extracted: List[Tuple[str, Directives, str, ImporterType]]
     ) -> Dict[Tuple[str, str], List[Tuple[Directive, ImporterType]]]:
         """Group entries by account and year-month, preserving importer information.
         
@@ -295,9 +233,11 @@ class Processor(abc.ABC, Generic[ImporterType]):
         return entries_by_account_month
 
     @abc.abstractmethod
-    def process_output(self, entries_by_account_month: Dict[Tuple[
-        str, str], List[Tuple[Directive, ImporterType]]],
-                       entries_by_dest_file: Dict[str, Entries]) -> None:
+    def process_output(
+        self, entries_by_account_month: Dict[Tuple[str, str],
+                                             List[Tuple[Directive,
+                                                        ImporterType]]]
+    ) -> None:
         """Process the output for the extracted and deduplicated entries.
         
         This abstract method must be implemented by subclasses to define how

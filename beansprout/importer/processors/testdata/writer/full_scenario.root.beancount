@@ -1,0 +1,10 @@
+include "transactions/Assets/Cash/Wallet/202504.beancount"
+
+2025-04-20 * "Payee C" "Transaction"
+	Assets:Cash:Wallet -500 JPY
+	Expenses:Food
+
+2025-04-25 * "Payee D" "Transaction"
+	Assets:Cash:Wallet       -550 JPY
+	Expenses:Entertainment    500 JPY
+	Expenses:Tax               50 JPY

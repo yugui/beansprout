@@ -100,45 +100,16 @@ class TestProcessor(unittest.TestCase):
                 kwargs['existing_file'] = ""
             super().__init__(*args, **kwargs)
             self.output_called = False
-            self.output_args = None
+            self.entries_by_account_month = None
 
-        def process_output(self, entries_by_account_month,
-                           entries_by_dest_file):
+        def process_output(self, entries_by_account_month):
             """Record that process_output was called and with what arguments."""
             self.output_called = True
-            self.output_args = (entries_by_account_month, entries_by_dest_file)
-
-    def test_get_account_file_path(self):
-        """Test the get_account_file_path method."""
-        processor = self.ConcreteProcessor(importers=[self.mock_importer],
-                                           destination=self.dest_dir)
-
-        # Test simple account
-        expected_path = os.path.join(self.dest_dir, "transactions", "Assets",
-                                     "Cash", "Wallet", "202504.beancount")
-        actual_path = processor.get_account_file_path("Assets:Cash:Wallet",
-                                                      "202504")
-        self.assertEqual(actual_path, expected_path)
-
-        # Test more complex account
-        expected_path = os.path.join(self.dest_dir, "transactions",
-                                     "Liabilities", "CreditCard", "Chase",
-                                     "202505.beancount")
-        actual_path = processor.get_account_file_path(
-            "Liabilities:CreditCard:Chase", "202505")
-        self.assertEqual(actual_path, expected_path)
-
-        # Test account with many components
-        expected_path = os.path.join(self.dest_dir, "transactions", "Assets",
-                                     "Investments", "Brokerage", "Stocks",
-                                     "Tech", "202506.beancount")
-        actual_path = processor.get_account_file_path(
-            "Assets:Investments:Brokerage:Stocks:Tech", "202506")
-        self.assertEqual(actual_path, expected_path)
+            self.entries_by_account_month = entries_by_account_month
 
     @mock.patch("beangulp.identify.identify")
     @mock.patch("beangulp.extract.extract_from_file")
-    @mock.patch("beancount.loader.load_file")
+    @mock.patch("beancount.load_file")
     def test_process_new_file(self, mock_load_file, mock_extract,
                               mock_identify):
         """Test processing transactions into a new file."""
@@ -163,7 +134,7 @@ class TestProcessor(unittest.TestCase):
         self.assertTrue(processor.output_called)
 
         # Check that entries_by_account_month contains our test transaction
-        entries_by_account_month, entries_by_dest_file = processor.output_args
+        entries_by_account_month = processor.entries_by_account_month
         self.assertIn(("Assets:Cash:Wallet", "202504"),
                       entries_by_account_month)
         self.assertEqual(
@@ -173,12 +144,9 @@ class TestProcessor(unittest.TestCase):
         self.assertEqual(entry, self.test_transaction)
         self.assertEqual(importer, self.mock_importer)
 
-        # Check that entries_by_dest_file is empty (since no existing files)
-        self.assertEqual(len(entries_by_dest_file), 0)
-
     @mock.patch("beangulp.identify.identify")
     @mock.patch("beangulp.extract.extract_from_file")
-    @mock.patch("beancount.loader.load_file")
+    @mock.patch("beancount.load_file")
     def test_process_existing_file(self, mock_load_file, mock_extract,
                                    mock_identify):
         """Test processing transactions into an existing file."""
@@ -246,7 +214,7 @@ class TestProcessor(unittest.TestCase):
         self.assertTrue(processor.output_called)
 
         # Check that entries_by_account_month contains our test transaction
-        entries_by_account_month, entries_by_dest_file = processor.output_args
+        entries_by_account_month = processor.entries_by_account_month
         self.assertIn(("Assets:Cash:Wallet", "202504"),
                       entries_by_account_month)
         self.assertEqual(
@@ -256,15 +224,9 @@ class TestProcessor(unittest.TestCase):
         self.assertEqual(entry, self.test_transaction)
         self.assertEqual(importer, self.mock_importer)
 
-        # Check that entries_by_dest_file contains the existing file with the existing transaction
-        self.assertIn(existing_file, entries_by_dest_file)
-        self.assertEqual(len(entries_by_dest_file[existing_file]), 1)
-        self.assertEqual(entries_by_dest_file[existing_file][0],
-                         existing_transaction)
-
     @mock.patch("beangulp.identify.identify")
     @mock.patch("beangulp.extract.extract_from_file")
-    @mock.patch("beancount.loader.load_file")
+    @mock.patch("beancount.load_file")
     def test_process_with_duplicates(self, mock_load_file, mock_extract,
                                      mock_identify):
         """Test processing transactions with duplicates."""
@@ -379,7 +341,7 @@ class TestProcessor(unittest.TestCase):
 
         # Check that entries_by_account_month contains both transactions
         # (including the duplicate, which should be marked but not filtered out)
-        entries_by_account_month, entries_by_dest_file = processor.output_args
+        entries_by_account_month = processor.entries_by_account_month
         self.assertIn(("Assets:Cash:Wallet", "202504"),
                       entries_by_account_month)
         self.assertEqual(
@@ -394,12 +356,6 @@ class TestProcessor(unittest.TestCase):
             and '__duplicate__' in entry.meta
         ]
         self.assertEqual(len(duplicate_entries), 1)
-
-        # Check that entries_by_dest_file contains the existing file with the existing transaction
-        self.assertIn(existing_file, entries_by_dest_file)
-        self.assertEqual(len(entries_by_dest_file[existing_file]), 1)
-        self.assertEqual(entries_by_dest_file[existing_file][0],
-                         existing_transaction)
 
 
 if __name__ == "__main__":

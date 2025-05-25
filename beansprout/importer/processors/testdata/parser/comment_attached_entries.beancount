@@ -1,0 +1,13 @@
+; This is a test entry
+2025-04-01 * "Test entry"
+    Expenses:Food  10.00 USD
+    Assets:Cash
+; This is another test entry
+;
+; Another line of comment
+  ;
+;
+2025-04-02 * "Test entry 2"
+    key: "Value"
+    Assets:Cash
+    Income:Salary  -1000.00 USD

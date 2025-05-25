@@ -1,7 +1,7 @@
 """Build rules for the beansprout importers processors package."""
 
 load("@beansprout_deps//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,11 +9,58 @@ py_library(
     name = "processors",
     srcs = [
         "__init__.py",
-        "base.py",
         "file_writer.py",
+        "text_preserving_parser.py",
+        "types.py",
     ],
     deps = [
         "//beansprout/importer:merge",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "file_writer_test",
+    srcs = ["file_writer_test.py"],
+    data = glob([
+        "testdata/parser/*.beancount",
+        "testdata/writer/*.beancount",
+    ]),
+    deps = [
+        ":identity_importer",
+        ":processors",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "text_preserving_parser_test",
+    srcs = ["text_preserving_parser_test.py"],
+    data = glob(["testdata/parser/*.beancount"]),
+    deps = [
+        ":processors",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "identity_importer",
+    testonly = True,
+    srcs = ["identity_importer.py"],
+    deps = [
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "identity_importer_test",
+    srcs = ["identity_importer_test.py"],
+    deps = [
+        ":identity_importer",
         requirement("beancount"),
         requirement("beangulp"),
     ],

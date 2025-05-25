@@ -1,0 +1,7 @@
+2025-04-15 * "Test Payee" "Test Transaction"
+  Assets:Cash:Wallet  -1000 JPY
+  Expenses:Food        1000 JPY
+
+This is some free text
+that follows an entry
+with multiple lines

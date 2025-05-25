@@ -1,0 +1,15 @@
+2025-04-01 * "Test entry"
+    Expenses:Food  10.00 USD
+    Assets:Cash
+2025-04-02 * "Test entry 2"
+    key: "Value"
+    Assets:Cash
+    Income:Salary  -1000.00 USD
+2025-04-02 ! "Test entry 3"
+    key: "Value"
+    Assets:Cash   -3 USD
+2025-04-03 * "Test entry 4"
+    ; Inline comment
+    Assets:Cash    -5 USD @ 140 JPY
+ ; Another inline comment
+    Assets:Cash

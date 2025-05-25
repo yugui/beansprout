@@ -1,0 +1,6 @@
+2025-04-15 * "Test Payee" "Test Transaction"
+  Assets:Cash:Wallet  -1000 JPY
+  Expenses:Food        1000 JPY
+; 2025-04-16 * "Commented Payee" "Commented Transaction"
+;   Assets:Cash:Wallet  -500 JPY
+;   Expenses:Food        500 JPY

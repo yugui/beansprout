@@ -1,0 +1,6 @@
+This is some free text
+that precedes an entry
+with multiple lines
+2025-04-15 * "Test Payee" "Test Transaction"
+  Assets:Cash:Wallet  -1000 JPY
+  Expenses:Food        1000 JPY
