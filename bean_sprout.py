@@ -472,7 +472,6 @@ def main():
                                         "1") == "1"
     if use_smart_importer:
         from smart_importer import PredictPostings
-        from smart_importer.hooks import apply_hooks
 
         # Configure weights if provided
         weights_str = os.environ.get("BEANSPROUT_SMART_IMPORTER_WEIGHTS", "")
@@ -485,18 +484,10 @@ def main():
             except:
                 pass
 
-        # Apply PredictPostings decorator to all importers
-        decorated_importers = []
-        for importer in importers:
-            # Create PredictPostings with custom weights if provided
-            predictor = PredictPostings(
-                weights=weights) if weights else PredictPostings()
-
-            # Apply decorator
-            decorated_importer = apply_hooks(importer, [predictor])
-            decorated_importers.append(decorated_importer)
-
-        importers = decorated_importers
+        if weights:
+            hooks.append(PredictPostings(weights=weights).hook)
+        else:
+            hooks.append(PredictPostings().hook)
 
     # Create and run the ingest command using our extended version
     ingest = ExtendedIngest(importers, hooks)

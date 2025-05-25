@@ -556,9 +556,9 @@ six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
     # via python-dateutil
-smart-importer==0.6 \
-    --hash=sha256:12822cd3a70e6f7bdfd89d9e181836cd5cf0c6ff53a4009bfcadd7de690c0aaf \
-    --hash=sha256:64b2c0144aa768915f67189a62778b9b485bc45085e6eb8cb8e5c5f79339b380
+smart-importer==1.0 \
+    --hash=sha256:1bd46ccb398414e9812d4f9e9a7cdd13d03047bb22b2d271ccd0cdfcf30c1814 \
+    --hash=sha256:6dad3f38b281504ffed88c25cbab4e36f4c65f35509645d4b8e6da1384209a3e
     # via -r third_party/requirements.in
 soupsieve==2.7 \
     --hash=sha256:6e60cc5c1ffaf1cebcc12e8188320b72071e922c2e897f737cadce79ad5d30c4 \

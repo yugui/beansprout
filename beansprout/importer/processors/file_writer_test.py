@@ -17,6 +17,7 @@ import beangulp
 from beansprout.importer.processors.file_writer import FileWriter
 from beansprout.importer.processors.identity_importer import IdentityImporter
 
+
 class FakeImporter(beangulp.Importer):
     """Fake importer for testing purposes."""
 
@@ -39,8 +40,8 @@ class TestFileWriter(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_dir = self.temp_dir.name
 
-        self.test_input_dir = os.path.join(
-                os.path.dirname(__file__), "testdata")
+        self.test_input_dir = os.path.join(os.path.dirname(__file__),
+                                           "testdata")
 
         # Create a source directory for test files
         self.source_dir = os.path.join(self.test_dir, "source")
@@ -424,7 +425,8 @@ class TestFileWriter(unittest.TestCase):
 
         # Create entries_by_account_month and entries_by_dest_file
         entries_by_account_month = {
-            ("Assets:Cash:Wallet", "202504"): [(last_transaction, self.fake_importer)]
+            ("Assets:Cash:Wallet", "202504"):
+            [(last_transaction, self.fake_importer)]
         }
 
         # Process the output
@@ -492,13 +494,14 @@ class TestFileWriter(unittest.TestCase):
 
     def test_full_scenario(self):
         # Create from a test data
-        existing_file = os.path.join(self.test_input_dir, 'parser/mixed.beancount')
+        existing_file = os.path.join(self.test_input_dir,
+                                     'parser/mixed.beancount')
         dest_file = os.path.join(self.account_dir, "202504.beancount")
         shutil.copy(existing_file, dest_file)
 
         root_file = os.path.join(self.dest_dir, "root.beancount")
-        root_template_file = os.path.join(self.test_input_dir,
-                                          'writer/full_scenario.root.beancount')
+        root_template_file = os.path.join(
+            self.test_input_dir, 'writer/full_scenario.root.beancount')
         shutil.copy(root_template_file, root_file)
 
         importer = IdentityImporter(account_name="Assets:Cash:Wallet")
@@ -508,7 +511,8 @@ class TestFileWriter(unittest.TestCase):
                                destination=self.dest_dir,
                                existing_file=root_file)
 
-        input_file = os.path.join(self.test_input_dir, "writer/full_scenario.source.beancount")
+        input_file = os.path.join(self.test_input_dir,
+                                  "writer/full_scenario.source.beancount")
 
         # Process the output
         processor.process([input_file])
@@ -516,7 +520,8 @@ class TestFileWriter(unittest.TestCase):
         with open(dest_file, "r") as f:
             written_content = f.read()
 
-        golden_path = os.path.join(self.test_input_dir, 'writer/full_scenario.golden.beancount')
+        golden_path = os.path.join(self.test_input_dir,
+                                   'writer/full_scenario.golden.beancount')
         with open(golden_path, "r") as f:
             golden_content = f.read()
 

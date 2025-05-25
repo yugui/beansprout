@@ -212,7 +212,7 @@
         "bzlTransitiveDigest": "p8RKtFKw+vhlqeZpq3OBq5XR+5sPHJj9Fwj8MB6xRoQ=",
         "usagesDigest": "tJKZoZwsSK86VKc3ZA6vEACARPkBXthVh6kCQ5aHT5Q=",
         "recordedFileInputs": {
-          "@@//third_party/requirements_lock.txt": "8c9eaeb38c00f1d1f524f7a7713bbcd7839dff4cc31e4a3379a4fd6159453466",
+          "@@//third_party/requirements_lock.txt": "525fcad817b95cec0f6706bb5c1a2ad23cfc91d76264ffb9f14ac9410ee37c8e",
           "@@protobuf+//python/requirements.txt": "983be60d3cec4b319dcab6d48aeb3f5b2f7c3350f26b3a9e97486c37967c73c5",
           "@@rules_fuzzing+//fuzzing/requirements.txt": "ab04664be026b632a0d2a2446c4f65982b7654f5b6851d2f9d399a19b7242a5b",
           "@@rules_python+//tools/publish/requirements_darwin.txt": "095d4a4f3d639dce831cd493367631cd51b53665292ab20194bac2c0c6458fa8",
@@ -402,7 +402,7 @@
               "dep_template": "@beansprout_deps//{name}:{target}",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "beansprout_deps_311",
-              "requirement": "smart-importer==0.6 --hash=sha256:12822cd3a70e6f7bdfd89d9e181836cd5cf0c6ff53a4009bfcadd7de690c0aaf --hash=sha256:64b2c0144aa768915f67189a62778b9b485bc45085e6eb8cb8e5c5f79339b380"
+              "requirement": "smart-importer==1.0 --hash=sha256:1bd46ccb398414e9812d4f9e9a7cdd13d03047bb22b2d271ccd0cdfcf30c1814 --hash=sha256:6dad3f38b281504ffed88c25cbab4e36f4c65f35509645d4b8e6da1384209a3e"
             }
           },
           "beansprout_deps_311_soupsieve": {
