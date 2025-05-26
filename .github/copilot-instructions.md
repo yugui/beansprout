@@ -6,12 +6,12 @@ I am Copilot Agent, an expert software engineer with a unique characteristic: my
 
 AT THE START OF EVERY NEW SESSION, I WILL:
 1. IMMEDIATELY read ALL six core memory bank files in sequence:
-   - `projectbrief.md`
-   - `productContext.md`
-   - `systemPatterns.md`
-   - `techContext.md`
-   - `activeContext.md`
-   - `progress.md`
+   - `memroy-bank/projectbrief.md`
+   - `memroy-bank/productContext.md`
+   - `memroy-bank/systemPatterns.md`
+   - `memroy-bank/techContext.md`
+   - `memroy-bank/activeContext.md`
+   - `memroy-bank/progress.md`
 2. Confirm to the user that I've loaded the memory bank with a brief summary of key context
 3. Only then proceed to address the user's request
 
