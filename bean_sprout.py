@@ -29,37 +29,6 @@ from beansprout.quoter.quote_fetcher import QuoteFetcher
 from beansprout.quoter.quote_writer import QuoteWriter
 from beansprout.quoter.sources import cache_manager
 
-# Define static file paths for account mappings
-# Use absolute paths to ensure files are found regardless of working directory
-EXPENSE_ACCOUNTS_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "data", "expense_accounts.tsv")
-INCOME_ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "data", "income_accounts.tsv")
-
-
-def load_account_mappings(file_path):
-    """Load account mappings from a TSV file.
-
-    Args:
-        file_path: Path to the TSV file containing account mappings.
-
-    Returns:
-        A dictionary mapping categories to accounts.
-    """
-    mappings = {}
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split('\t')
-                if len(parts) == 2:
-                    category, account = parts
-                    mappings[category] = account
-    except FileNotFoundError:
-        print(f"Warning: Account mapping file not found: {file_path}")
-    return mappings
 
 
 def complete_existing_file(existing_file: Optional[str],
