@@ -405,13 +405,14 @@ def _extract(ctx, src, output, existing, reverse, failfast, verbose, quiet):
                             quiet)
 
 
-class ExtendedIngest(beangulp.Ingest):
-    """Extended version of beangulp.Ingest with additional subcommands."""
+class BeanSprout(beangulp.Ingest):
+    """BeanSprout command-line tool for managing Beancount ledgers."""
 
     def __init__(self, config: Config, importers: List[ImporterType], hooks=None):
-        """Initialize the ExtendedIngest class.
+        """Initialize the BeanSprout class.
 
         Args:
+            config: Configuration object
             importers: List of importers to use.
             hooks: Optional list of hooks to run after extraction.
         """
@@ -463,7 +464,7 @@ def main():
             hooks.append(PredictPostings().hook)
 
     # Create and run the ingest command using our extended version
-    ingest = ExtendedIngest(importers=importers, hooks=hooks, config=config)
+    ingest = BeanSprout(importers=importers, hooks=hooks, config=config)
     ingest()
 
 
