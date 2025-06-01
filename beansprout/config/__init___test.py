@@ -85,7 +85,7 @@ class Importer:
 
     def _create_config_file(self,
                             content: str,
-                            filename: str = "beansprout.beancount"):
+                            filename: str = "beansprout.toml"):
         """Create a config file with the given content."""
         with open(filename, "w") as f:
             f.write(content)
@@ -94,135 +94,96 @@ class Importer:
         """Test loading config when no config file exists."""
         # Don't create any config files
         config = load_config()
-
-        # Check that the config has default values
         self.assertIsNone(config.primary_file)
         self.assertEqual(len(config.importers), 0)
 
     def test_empty_config_file(self):
         """Test loading an empty config file."""
-        # Create an empty config file
         self._create_config_file("")
-
-        # Load the config
         config = load_config()
-
-        # Check that the config has default values
         self.assertIsNone(config.primary_file)
         self.assertEqual(len(config.importers), 0)
 
     def test_config_with_primary_file(self):
         """Test loading a config with a primary_file directive."""
-        # Create a config file with a primary_file directive
-        self._create_config_file("""
-2025-01-01 custom "beansprout" "primary_file" "main.beancount"
-""")
-
-        # Load the config
+        self._create_config_file('primary_file = "main.beancount"\n')
         config = load_config()
-
-        # Check that the primary_file is set correctly
         self.assertEqual(config.primary_file, "main.beancount")
         self.assertEqual(len(config.importers), 0)
 
     def test_config_with_importer(self):
         """Test loading a config with an importer directive."""
-        # Create a config file with an importer directive using the new interleaving format
         self._create_config_file("""
-2025-01-01 custom "beansprout" "importer" "test_importers.test_importer" "account" "Assets:Test:Account"
+[[importers]]
+name = "test_importers.test_importer"
+account = "Assets:Test:Account"
 """)
-
-        # Load the config
         config = load_config()
-
-        # Check that the importer is loaded correctly
         self.assertIsNone(config.primary_file)
         self.assertEqual(len(config.importers), 1)
-
-        # Check that the importer has the correct account
         importer = config.importers[0]
         self.assertEqual(importer.account, "Assets:Test:Account")
 
     def test_config_with_multiple_importers(self):
         """Test loading a config with multiple importer directives."""
-        # Create a config file with multiple importer directives using the new interleaving format
         self._create_config_file("""
-2025-01-01 custom "beansprout" "importer" "test_importers.test_importer" "account" "Assets:Test:Account1"
-2025-01-01 custom "beansprout" "importer" "test_importers.test_importer" "account" "Assets:Test:Account2"
+[[importers]]
+name = "test_importers.test_importer"
+account = "Assets:Test:Account1"
+
+[[importers]]
+name = "test_importers.test_importer"
+account = "Assets:Test:Account2"
 """)
-
-        # Load the config
         config = load_config()
-
-        # Check that the importers are loaded correctly
         self.assertIsNone(config.primary_file)
         self.assertEqual(len(config.importers), 2)
-
-        # Check that the importers have the correct accounts
         self.assertEqual(config.importers[0].account, "Assets:Test:Account1")
         self.assertEqual(config.importers[1].account, "Assets:Test:Account2")
 
     def test_config_with_primary_file_and_importers(self):
         """Test loading a config with both primary_file and importer directives."""
-        # Create a config file with both primary_file and importer directives using the new interleaving format
         self._create_config_file("""
-2025-01-01 custom "beansprout" "primary_file" "main.beancount"
-2025-01-01 custom "beansprout" "importer" "test_importers.test_importer" "account" "Assets:Test:Account"
+primary_file = "main.beancount"
+
+[[importers]]
+name = "test_importers.test_importer"
+account = "Assets:Test:Account"
 """)
-
-        # Load the config
         config = load_config()
-
-        # Check that both primary_file and importers are set correctly
         self.assertEqual(config.primary_file, "main.beancount")
         self.assertEqual(len(config.importers), 1)
         self.assertEqual(config.importers[0].account, "Assets:Test:Account")
 
     def test_config_with_invalid_primary_file(self):
         """Test loading a config with an invalid primary_file directive."""
-        # Create a config file with an invalid primary_file directive
-        self._create_config_file("""
-2025-01-01 custom "beansprout" "primary_file" 123
-""")
-
-        # Load the config should raise a ValueError
-        with self.assertRaises(ValueError):
+        self._create_config_file('primary_file = 123\n')
+        with self.assertRaises(TypeError):
             load_config()
 
     def test_config_with_invalid_importer_name(self):
         """Test loading a config with an invalid importer name."""
-        # Create a config file with an invalid importer name
         self._create_config_file("""
-2025-01-01 custom "beansprout" "importer" 123
+[[importers]]
+name = 123
 """)
-
-        # Load the config should raise a ValueError
         with self.assertRaises(ValueError):
             load_config()
 
     def test_config_with_nonexistent_importer(self):
         """Test loading a config with a nonexistent importer."""
-        # Create a config file with a nonexistent importer
         self._create_config_file("""
-2025-01-01 custom "beansprout" "importer" "nonexistent_importer"
+[[importers]]
+name = "nonexistent_importer"
 """)
-
-        # Load the config should raise a ValueError
         with self.assertRaises(ValueError):
             load_config()
 
     def test_alternate_config_file_name(self):
         """Test loading a config with the alternate file name."""
-        # Create a config file with the alternate name
-        self._create_config_file("""
-2025-01-01 custom "beansprout" "primary_file" "alternate.beancount"
-""",
-                                 filename=".beansprout.beancount")
-
-        # Load the config
+        self._create_config_file('primary_file = "alternate.beancount"\n',
+                                 filename=".beansprout.toml")
         config = load_config()
-
-        # Check that the primary_file is set correctly
         self.assertEqual(config.primary_file, "alternate.beancount")
 
 

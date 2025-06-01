@@ -53,24 +53,40 @@ files with, Beansprout assumes the following one for convenience:
 
 # Configuration
 
-Beansprout supports several configurations under the `beansprout` custom
-directive.
+Beansprout configuration is specified in TOML format (`beansprout.toml` or `.beansprout.toml`) at the root of your ledger directory. The configuration file defines the primary ledger file and a list of importers with their parameters.
+
+Example `beansprout.toml`:
+
+```toml
+primary_file = "main.beancount"
+
+[[importers]]
+name = "certain_importer"
+account = "Assets:Foo:Bar"
+filename_pattern = "*.csv"
+
+[[importers]]
+name = "other_importer"
+param1 = "value1"
+param2 = "value2"
+```
+
+- `primary_file`: Path to the main ledger file (optional).
+- `importers`: List of importer definitions. Each importer must have a `name` (the Python module path to the Importer class) and any additional key-value parameters required by the importer.
 
 ## Importers
-Beansprout dynamically load and instantiate importers as defined in the
-`custom` directive. Here is the syntax of the directive:
+Beansprout dynamically loads and instantiates importers as defined in the TOML configuration file. Each importer is specified as a table in the `importers` array, with its module name and parameters.
 
-```beancount
-DATE "custom" "beansprout" "importer" "IMPORTER_MODULE_NAME" "KEY1" "VALUE1" "KEY2" "VALUE2" ...
+Example TOML config for an importer:
+
+```toml
+[[importers]]
+name = "soysprout.importers.moneyforward"
+wallet_account = "Assets:Cash:Wallet"
+expected_institution = "財布"
+expense_accounts_path = "mapping/moneyforward/expense_accounts.tsv"
+income_accounts_path = "mapping/moneyforward/income_accounts.tsv"
 ```
 
-* `IMPORTER_MODULE_NAME` is the name of the Python module that exports
-  `Importer` class. It should be importable from Python's import path.
-* `KEY1`, `VALUE1`, `KEY2`, `VALUE2`, ... are key-value pairs that are passed
-  to the constructor of the `Importer` class.
-
-
-Example:
-```beancount
-1970-01-01 custom "beansprout" "importer" "soysprout.importers.moneyforward" "wallet_account" "Assets:Cash:Wallet" "expected_institution" "財布" "expense_accounts_path" "mapping/moneyforward/expense_accounts.tsv" "income_accounts_path" "mapping/moneyforward/income_accounts.tsv"
-```
+* `name` is the name of the Python module that exports an `Importer` class. It should be importable from Python's import path.
+* All other keys are passed as keyword arguments to the Importer constructor.
