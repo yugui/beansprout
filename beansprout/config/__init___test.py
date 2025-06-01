@@ -105,10 +105,19 @@ class Importer:
         self.assertEqual(len(config.importers), 0)
 
     def test_config_with_primary_file(self):
-        """Test loading a config with a primary_file directive."""
+        """Test loading a config with a primary_file directive (relative path)."""
         self._create_config_file('primary_file = "main.beancount"\n')
         config = load_config()
-        self.assertEqual(config.primary_file, "main.beancount")
+        expected = os.path.abspath(os.path.join(os.getcwd(), "main.beancount"))
+        self.assertEqual(config.primary_file, expected)
+        self.assertEqual(len(config.importers), 0)
+
+    def test_config_with_primary_file_absolute(self):
+        """Test loading a config with a primary_file directive (absolute path)."""
+        abs_path = os.path.abspath("/tmp/absolute_main.beancount")
+        self._create_config_file(f'primary_file = "{abs_path}"\n')
+        config = load_config()
+        self.assertEqual(config.primary_file, abs_path)
         self.assertEqual(len(config.importers), 0)
 
     def test_config_with_importer(self):
@@ -151,7 +160,8 @@ name = "test_importers.test_importer"
 account = "Assets:Test:Account"
 """)
         config = load_config()
-        self.assertEqual(config.primary_file, "main.beancount")
+        expected = os.path.abspath(os.path.join(os.getcwd(), "main.beancount"))
+        self.assertEqual(config.primary_file, expected)
         self.assertEqual(len(config.importers), 1)
         self.assertEqual(config.importers[0].account, "Assets:Test:Account")
 
@@ -181,10 +191,10 @@ name = "nonexistent_importer"
 
     def test_alternate_config_file_name(self):
         """Test loading a config with the alternate file name."""
-        self._create_config_file('primary_file = "alternate.beancount"\n',
-                                 filename=".beansprout.toml")
+        self._create_config_file('primary_file = "alternate.beancount"\n', filename=".beansprout.toml")
         config = load_config()
-        self.assertEqual(config.primary_file, "alternate.beancount")
+        expected = os.path.abspath(os.path.join(os.getcwd(), "alternate.beancount"))
+        self.assertEqual(config.primary_file, expected)
 
 
 if __name__ == "__main__":

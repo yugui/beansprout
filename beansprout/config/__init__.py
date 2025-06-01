@@ -43,12 +43,15 @@ def load_config() -> Config:
     if not os.path.exists(file_path):
         return Config(primary_file=None, importers=[])
 
+    config_dir = os.path.dirname(os.path.abspath(file_path))
     with open(file_path, "rb") as f:
         config_data = tomllib.load(f)
 
     primary_file = config_data.get("primary_file")
     if primary_file is not None and not isinstance(primary_file, str):
         raise TypeError("primary_file must be a string or omitted")
+    if primary_file is not None and not os.path.isabs(primary_file):
+        primary_file = os.path.abspath(os.path.join(config_dir, primary_file))
     importers_data = config_data.get("importers", [])
     importers = []
     for importer_spec in importers_data:

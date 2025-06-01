@@ -21,7 +21,7 @@ from beancount.core.data import Directive, Entries, Commodity, Price
 from beancount.core import data
 from beanprice import source
 
-from beansprout.config import load_config
+from beansprout.config import load_config, Config
 from beansprout.importer.merge import Processor, ImporterType
 from beansprout.importer.processors.file_writer import FileWriter
 from beansprout.quoter.commodity_finder import CommodityFinder
@@ -30,12 +30,13 @@ from beansprout.quoter.quote_writer import QuoteWriter
 from beansprout.quoter.sources import cache_manager
 
 
-
-def complete_existing_file(existing_file: Optional[str],
+def complete_existing_file(config: Config,
+                           existing_file: Optional[str],
                            destination: Optional[str] = None) -> str:
     """Complete the existing file path with a default if not provided.
     
     Args:
+        config: The configuration object containing primary file information.
         existing_file: The existing file path, if provided.
         destination: The destination directory, used to construct the default path.
         
@@ -44,6 +45,8 @@ def complete_existing_file(existing_file: Optional[str],
     """
     if existing_file:
         return existing_file
+    if config.primary_file:
+        return config.primary_file
     return os.path.join(complete_destination(destination), "ledger.beancount")
 
 
@@ -130,7 +133,7 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
     processor = FileWriter(importers=ctx.importers,
                            destination=complete_destination(destination),
                            existing_file=complete_existing_file(
-                               existing_file, destination),
+                               ctx.config, existing_file, destination),
                            reverse=reverse,
                            failfast=failfast,
                            quiet=quiet,
@@ -382,7 +385,7 @@ def _archive(ctx, src, destination, overwrite, dry_run, failfast, quiet):
 @click.option('--quiet', '-q', count=True, help='Suppress all output.')
 @click.pass_obj
 def _extract(ctx, src, output, existing, reverse, failfast, verbose, quiet):
-    existing = complete_existing_file(existing)
+    existing = complete_existing_file(ctx.config, existing)
 
     # Set up logging
     logging_level = logging.WARNING
@@ -405,7 +408,7 @@ def _extract(ctx, src, output, existing, reverse, failfast, verbose, quiet):
 class ExtendedIngest(beangulp.Ingest):
     """Extended version of beangulp.Ingest with additional subcommands."""
 
-    def __init__(self, importers, hooks=None):
+    def __init__(self, config: Config, importers: List[ImporterType], hooks=None):
         """Initialize the ExtendedIngest class.
 
         Args:
@@ -414,6 +417,7 @@ class ExtendedIngest(beangulp.Ingest):
         """
         # Initialize the parent class
         super().__init__(importers, hooks)
+        self.config = config
 
         # Remove the original archive command
         self.cli.commands.pop("archive", None)
@@ -459,7 +463,7 @@ def main():
             hooks.append(PredictPostings().hook)
 
     # Create and run the ingest command using our extended version
-    ingest = ExtendedIngest(importers, hooks)
+    ingest = ExtendedIngest(importers=importers, hooks=hooks, config=config)
     ingest()
 
 
