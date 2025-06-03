@@ -191,9 +191,11 @@ name = "nonexistent_importer"
 
     def test_alternate_config_file_name(self):
         """Test loading a config with the alternate file name."""
-        self._create_config_file('primary_file = "alternate.beancount"\n', filename=".beansprout.toml")
+        self._create_config_file('primary_file = "alternate.beancount"\n',
+                                 filename=".beansprout.toml")
         config = load_config()
-        expected = os.path.abspath(os.path.join(os.getcwd(), "alternate.beancount"))
+        expected = os.path.abspath(
+            os.path.join(os.getcwd(), "alternate.beancount"))
         self.assertEqual(config.primary_file, expected)
 
 

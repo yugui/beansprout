@@ -61,7 +61,7 @@ def complete_destination(destination: Optional[str]) -> str:
     """
     if destination:
         return destination
-    os.path.join(os.getcwd(), "transactions")
+    return os.getcwd()
 
 
 @click.command('merge')
@@ -129,9 +129,9 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
     logging.basicConfig(level=logging_level,
                         format='%(levelname)s: %(message)s')
 
-    # Create a FileWriter instance
+    destination = complete_destination(destination)
     processor = FileWriter(importers=ctx.importers,
-                           destination=complete_destination(destination),
+                           destination=destination,
                            existing_file=complete_existing_file(
                                ctx.config, existing_file, destination),
                            reverse=reverse,
@@ -139,10 +139,7 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
                            quiet=quiet,
                            dry_run=dry_run)
 
-    # Process the source files
     status = processor.process(src)
-
-    # Exit with the appropriate status code
     if status != 0:
         sys.exit(status)
 
@@ -317,6 +314,7 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
               '-o',
               metavar='DIR',
               type=click.Path(file_okay=False, resolve_path=True),
+              default=os.getcwd(),
               help='The destination documents tree root directory.')
 @click.option('--overwrite',
               '-f',
@@ -347,14 +345,17 @@ def _archive(ctx, src, destination, overwrite, dry_run, failfast, quiet):
     The default destination path follows Beansprout's conventional directory
     structure: {destination_dir}/transactions/{account_hierarchy}/{filename}
     """
-    # Modify the destination to include the "transactions" prefix
-    modified_destination = os.path.join(complete_destination(destination),
-                                        "transactions")
+    transaction_dir = os.path.join(complete_destination(destination),
+                                   "transactions")
 
-    # Call the original beangulp._archive function with the modified destination
     from beangulp import _archive as beangulp_archive
-    return beangulp_archive(ctx, src, modified_destination, overwrite, dry_run,
-                            failfast, quiet)
+    callback = beangulp_archive.callback
+    return callback(src=src,
+                    destination=transaction_dir,
+                    dry_run=dry_run,
+                    overwrite=overwrite,
+                    failfast=failfast,
+                    quiet=quiet)
 
 
 @click.command('extract')
@@ -408,7 +409,10 @@ def _extract(ctx, src, output, existing, reverse, failfast, verbose, quiet):
 class BeanSprout(beangulp.Ingest):
     """BeanSprout command-line tool for managing Beancount ledgers."""
 
-    def __init__(self, config: Config, importers: List[ImporterType], hooks=None):
+    def __init__(self,
+                 config: Config,
+                 importers: List[ImporterType],
+                 hooks=None):
         """Initialize the BeanSprout class.
 
         Args:
