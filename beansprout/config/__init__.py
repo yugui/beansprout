@@ -13,6 +13,7 @@ _logger = logging.getLogger(__name__)
 class Config(NamedTuple):
     primary_file: Optional[str] = None
     importers: List[ImporterType] = []
+    library_paths: List[str] = []
 
 
 def load_config() -> Config:
@@ -45,16 +46,23 @@ def load_config() -> Config:
 
     config_dir = os.path.dirname(os.path.abspath(file_path))
     with open(file_path, "rb") as f:
-        config_data = tomllib.load(f)
+        config_data = Config(**tomllib.load(f))
 
-    primary_file = config_data.get("primary_file")
+    primary_file = config_data.primary_file
     if primary_file is not None and not isinstance(primary_file, str):
         raise TypeError("primary_file must be a string or omitted")
     if primary_file is not None and not os.path.isabs(primary_file):
         primary_file = os.path.abspath(os.path.join(config_dir, primary_file))
-    importers_data = config_data.get("importers", [])
+
+    for path in config_data.library_paths:
+        if not os.path.isabs(path):
+            path = os.path.abspath(os.path.join(config_dir, path))
+        if not os.path.exists(path):
+            continue
+        sys.path.append(path)
+
     importers = []
-    for importer_spec in importers_data:
+    for importer_spec in config_data.importers:
         importer_name = importer_spec.get("name")
         if not isinstance(importer_name, str):
             raise ValueError("Invalid importer name")
