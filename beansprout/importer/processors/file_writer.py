@@ -117,9 +117,9 @@ class FileWriter(Processor):
         counter_duplicate = 0
 
         existing_blocks = parse_file(dest_file)
-        commented_entries: Directives = [
+        existing_entries: Directives = [
             block.entry for block in existing_blocks
-            if block.type == BlockType.COMMENTED_ENTRY
+            if block.type in [BlockType.COMMENTED_ENTRY, BlockType.ENTRY]
         ]
 
         new_blocks: List[NewEntryBlock] = []
@@ -135,13 +135,18 @@ class FileWriter(Processor):
                 counter_duplicate += 1
                 continue  # Skip entries that are already in the file
 
-            # Try de-duplicating again to compare with the commented entries
-            importer.deduplicate([entry], commented_entries)
+            # Temporarily reset the duplicate metadata before the re-deduplication
+            orig_duplicate = duplicate
+            del entry.meta['__duplicate__']
+            # Try de-duplicating again to compare with the existing entries
+            importer.deduplicate([entry], existing_entries)
             duplicate = self._get_duplicate(entry)
             if duplicate and duplicate.meta['filename'] == dest_file:
                 # If the duplicate is already in the file, skip it
                 counter_duplicate += 1
                 continue
+            # Restore the original duplicate metadata as it may be needed later
+            entry.meta['__duplicate__'] = orig_duplicate
 
             counter_commented += 1
             new_blocks.append(NewEntryBlock(entry=entry, should_comment=True))
