@@ -22,8 +22,8 @@ from beancount.core import data
 from beanprice import source
 
 from beansprout.config import load_config, Config
-from beansprout.importer.merge import Processor, ImporterType
-from beansprout.importer.processors.file_writer import FileWriter
+from beansprout.importer.types import ImporterType
+from beansprout.command.merge import Merge
 from beansprout.quoter.commodity_finder import CommodityFinder
 from beansprout.quoter.quote_fetcher import QuoteFetcher
 from beansprout.quoter.quote_writer import QuoteWriter
@@ -130,14 +130,15 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
                         format='%(levelname)s: %(message)s')
 
     destination = complete_destination(destination)
-    processor = FileWriter(importers=ctx.importers,
-                           destination=destination,
-                           existing_file=complete_existing_file(
-                               ctx.config, existing_file, destination),
-                           reverse=reverse,
-                           failfast=failfast,
-                           quiet=quiet,
-                           dry_run=dry_run)
+    processor = Merge(importers=ctx.importers,
+                      hooks=ctx.hooks,
+                      destination=destination,
+                      existing_file=complete_existing_file(
+                          ctx.config, existing_file, destination),
+                      reverse=reverse,
+                      failfast=failfast,
+                      quiet=quiet,
+                      dry_run=dry_run)
 
     status = processor.process(src)
     if status != 0:

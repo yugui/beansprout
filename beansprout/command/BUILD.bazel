@@ -1,0 +1,25 @@
+"""Build file for the beansprout.command package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "command",
+    srcs = [
+        "__init__.py",
+        "merge.py",
+    ],
+    deps = [
+        "//beansprout/writer",
+    ],
+)
+
+py_test(
+    name = "merge_test",
+    srcs = ["merge_test.py"],
+    deps = [
+        ":command",
+        "//beansprout/writer",
+    ],
+)

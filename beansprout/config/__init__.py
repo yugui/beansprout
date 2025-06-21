@@ -5,7 +5,7 @@ import sys
 import tomllib
 from typing import NamedTuple, Optional, List, Dict, Any
 
-from beansprout.importer.merge import ImporterType
+from beansprout.importer.types import ImporterType
 
 _logger = logging.getLogger(__name__)
 

@@ -14,8 +14,8 @@ from beancount import Directives
 from beancount.core import data
 import beangulp
 
-from beansprout.importer.processors.file_writer import FileWriter
-from beansprout.importer.processors.identity_importer import IdentityImporter
+from beansprout.writer.file_writer import FileWriter
+from beansprout.writer.identity_importer import IdentityImporter
 
 
 class FakeImporter(beangulp.Importer):
@@ -169,6 +169,7 @@ class TestFileWriter(unittest.TestCase):
         """Test that new entries are written to a new file correctly."""
         processor = FileWriter(
             importers=[self.fake_importer],
+            hooks=[],
             destination=self.dest_dir,
             existing_file="",  # Use empty string instead of None
             reverse=False,
@@ -211,6 +212,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[self.fake_importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=dest_file,
                                reverse=False,
@@ -266,6 +268,7 @@ class TestFileWriter(unittest.TestCase):
         """Test that dry run mode works correctly."""
         processor = FileWriter(
             importers=[self.fake_importer],
+            hooks=[],
             destination=self.dest_dir,
             existing_file="",  # Use empty string instead of None
             reverse=False,
@@ -303,6 +306,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[self.fake_importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=dest_file)
 
@@ -340,6 +344,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[self.fake_importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=dest_file,
                                reverse=True)
@@ -377,6 +382,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[self.fake_importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=dest_file,
                                reverse=True)
@@ -414,6 +420,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[self.fake_importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=dest_file)
 
@@ -458,6 +465,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[self.fake_importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=dest_file)
 
@@ -508,6 +516,7 @@ class TestFileWriter(unittest.TestCase):
 
         # Create a processor
         processor = FileWriter(importers=[importer],
+                               hooks=[],
                                destination=self.dest_dir,
                                existing_file=root_file)
 

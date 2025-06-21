@@ -1,48 +1,15 @@
-"""Build rules for the beansprout importers package."""
-
 load("@beansprout_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "tokenizer",
-    srcs = ["tokenizer.py"],
-)
-
-py_library(
-    name = "merge",
-    srcs = ["merge.py"],
-    deps = [
-        requirement("beancount"),
-        requirement("beangulp"),
-        requirement("smart_importer"),
-    ],
-)
-
-py_library(
     name = "importer",
-    srcs = ["__init__.py"],
-    deps = [
-        ":merge",
-        ":tokenizer",
-        "//beansprout/importer/processors",
+    srcs = [
+        "__init__.py",
+        "types.py",
     ],
-)
-
-py_test(
-    name = "merge_test",
-    srcs = ["merge_test.py"],
     deps = [
-        ":merge",
-        requirement("beancount"),
-    ],
-)
-
-py_test(
-    name = "tokenizer_test",
-    srcs = ["tokenizer_test.py"],
-    deps = [
-        ":tokenizer",
+        requirement("beangulp"),
     ],
 )

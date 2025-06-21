@@ -13,8 +13,8 @@ py_binary(
         requirement("beangulp"),
         requirement("beanprice"),
         requirement("smart_importer"),
+        "//beansprout/command",
         "//beansprout/config",
-        "//beansprout/importer",
         "//beansprout/quoter",
     ],
 )

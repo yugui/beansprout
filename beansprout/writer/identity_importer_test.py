@@ -9,7 +9,7 @@ import beangulp
 from beancount.core import data
 from beancount.parser import printer
 
-from beansprout.importer.processors.identity_importer import IdentityImporter
+from beansprout.writer.identity_importer import IdentityImporter
 
 
 class TestIdentityImporter(unittest.TestCase):

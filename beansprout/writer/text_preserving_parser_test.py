@@ -13,10 +13,9 @@ import beancount
 from beancount.core import data
 from beancount.parser import printer
 
-from beansprout.importer.processors.types import (BlockType, EntryWithLines,
-                                                  CommentedEntryWithLines,
-                                                  NonEntryBlock)
-from beansprout.importer.processors.text_preserving_parser import TextPreservingParser
+from beansprout.writer.types import (BlockType, EntryWithLines,
+                                     CommentedEntryWithLines, NonEntryBlock)
+from beansprout.writer.text_preserving_parser import TextPreservingParser
 
 
 class TestTextPreservingParser(unittest.TestCase):

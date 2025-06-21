@@ -52,10 +52,8 @@ import beancount
 from beancount import Directive, Directives
 from beancount.parser import parser
 
-from beansprout.importer.processors.types import (BlockType, Block,
-                                                  EntryWithLines,
-                                                  CommentedEntryWithLines,
-                                                  NonEntryBlock)
+from beansprout.writer.types import (BlockType, Block, EntryWithLines,
+                                     CommentedEntryWithLines, NonEntryBlock)
 
 COMMENTED_ENTRY_PATTERN = re.compile(
     r'^(\s*;\s*)\d{4}-\d{2}-\d{2}\s+\S+\s*\S+')

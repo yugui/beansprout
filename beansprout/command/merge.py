@@ -1,70 +1,82 @@
-#!/usr/bin/env python3
-"""Abstract processor for merging extracted transactions with existing files.
+"""Merge command for Beansprout.
 
-This module provides an abstract base class for processing extracted transactions
-and merging them with existing files. It implements the core logic of the merge
-process while allowing customization of the final output phase.
+This module provides the Merge class that combines the functionality of the
+abstract Processor class and the concrete FileWriter class to provide a complete
+implementation of the merge process, from extraction to file writing with text
+preservation.
 """
 
 import os
-import abc
 import logging
 import sys
 from typing import Dict, List, Set, Tuple, Optional, TypeVar, Generic
 
+import click
 import beancount
 import beangulp
 from beancount import Directive, Directives
 
-# Type for importers
-ImporterType = TypeVar('ImporterType', bound=beangulp.Importer)
+from beansprout.importer.types import ImporterType
+from beansprout.writer.file_merger import FileMerger
 
 
-class Processor(abc.ABC, Generic[ImporterType]):
-    """Abstract base class for processing and merging extracted transactions.
+class Merge(Generic[ImporterType]):
+    """Processor for merging extracted transactions with existing files.
     
-    This class implements the core logic of the merge process (phases 1-5) from
-    the beangulp merge command, while leaving the final output phase abstract
-    for customization by subclasses.
+    This class combines the functionality of the abstract Processor class and the
+    concrete FileWriter class to provide a complete implementation of the merge
+    process, from extraction to file writing with text preservation.
     
     Attributes:
         importers: List of importers to use for extracting transactions.
+        hooks: List of hooks to apply to extracted entries.
         destination: The destination directory for extracted transactions.
+        existing_file: Path to a Beancount file with existing entries for training.
         reverse: Whether to sort entries in reverse order.
         failfast: Whether to stop processing at the first error.
         quiet: Level of output suppression.
-        log: Logger function for output.
+        dry_run: Whether to perform a dry run without writing files.
+        file_merger: FileMerger instance for merging entries into files.
     """
 
     def __init__(self,
                  importers: List[ImporterType],
-                 destination: str,
-                 existing_file: str,
+                 hooks: List,
+                 destination: str = None,
+                 existing_file: str = None,
                  reverse: bool = False,
-                 failfast: bool = False):
-        """Initialize the Processor.
+                 failfast: bool = False,
+                 quiet: int = 0,
+                 dry_run: bool = False):
+        """Initialize the Merge class.
         
         Args:
             importers: List of importers to use for extracting transactions.
+            hooks: List of hooks to apply to extracted entries.
             destination: The destination directory for extracted transactions.
             existing_file: Path to a Beancount file with existing entries for training.
                            Defaults to "ledger.beancount" in the current directory if it exists.
             reverse: Whether to sort entries in reverse order.
             failfast: Whether to stop processing at the first error.
             quiet: Level of output suppression (0 for normal output, higher for less output).
+            dry_run: Whether to perform a dry run without writing files.
         """
         self.importers = importers
+        self.hooks = hooks
         self.destination = destination
         self.reverse = reverse
         self.failfast = failfast
+        self.quiet = quiet
+        self.dry_run = dry_run
         self.logger = logging.getLogger(__name__)
         self.log = beangulp.utils.logger(verbosity=(self.logger.level + 20) //
                                          10)
         self.errors = beangulp.exceptions.ExceptionsTrap(self.log)
+        self.file_merger = FileMerger(quiet=quiet, reverse=reverse)
 
         # Load existing entries for training if a file is provided or default exists
         self.existing_entries = []
-        if os.path.exists(existing_file):
+        if existing_file and os.path.exists(existing_file):
             try:
                 self.existing_entries, _, _ = beancount.load_file(
                     existing_file)
@@ -74,36 +86,16 @@ class Processor(abc.ABC, Generic[ImporterType]):
             except Exception as e:
                 self.logger.warning(f"Could not load {existing_file}: {e}")
 
-    def get_account_file_path(self, account: str, year_month: str) -> str:
-        """Construct the file path for an account and year-month based on Beansprout directory structure.
-        
-        Args:
-            account: The account name, e.g., "Assets:Cash:Wallet".
-            year_month: The year and month in YYYYMM format.
-            
-        Returns:
-            The file path relative to the destination directory, e.g.,
-            "transactions/Assets/Cash/Wallet/202505.beancount".
-        """
-        # Split the account by colon to get the components
-        account_components = account.split(":")
-        # Create the path under the "transactions" directory
-        path_components = ["transactions"] + account_components
-        # Create the directory path
-        dir_path = os.path.join(self.destination, *path_components)
-        # Return the full file path
-        return os.path.join(dir_path, f"{year_month}.beancount")
-
     def process(self, src: List[str]) -> int:
         """Process source files and merge extracted transactions with existing files.
         
-        This method implements the core logic of the merge process:
+        This method implements the complete merge process:
         1. Walk the source files and extract transactions
         2. Sort the extracted entries
-        3. Read existing transactions for each year-month
-        4. Deduplicate extracted entries against existing entries
-        5. Group entries by account and year-month, preserving importer information
-        6. Process output (abstract method to be implemented by subclasses)
+        3. Deduplicate extracted entries against existing entries
+        4. Apply hooks to the extracted entries
+        5. Group entries by account and year-month
+        6. Process output by writing entries to files
         
         Args:
             src: List of source files or directories to process.
@@ -125,12 +117,16 @@ class Processor(abc.ABC, Generic[ImporterType]):
         # Phase 3: Deduplicate extracted entries against existing entries
         self._mark_duplicate_entries(extracted)
 
-        # Phase 4: Group entries by account and year-month, preserving importer information
+        # Phase 4: Apply hooks to the extracted entries
+        for func in self.hooks:
+            extracted = func(extracted, self.existing_entries)
+
+        # Phase 5: Group entries by account and year-month, preserving importer information
         entries_by_account_month = self._group_entries_by_account_month(
             extracted)
 
-        # Phase 5: Process output (abstract method to be implemented by subclasses)
-        self.process_output(entries_by_account_month)
+        # Phase 6: Process output by writing entries to files
+        self._write_files(entries_by_account_month)
 
         return 0 if not self.errors else 1
 
@@ -197,9 +193,7 @@ class Processor(abc.ABC, Generic[ImporterType]):
         
         Args:
             extracted: List of tuples (filename, entries, account, importer)
-            existing_entries_by_year_month: Dictionary mapping year-months to lists of existing entries
         """
-
         existing_entries = self.existing_entries.copy()
         for filename, entries, account, importer in extracted:
             # Mark duplicate entries
@@ -232,20 +226,48 @@ class Processor(abc.ABC, Generic[ImporterType]):
 
         return entries_by_account_month
 
-    @abc.abstractmethod
-    def process_output(
+    def _write_files(
         self, entries_by_account_month: Dict[Tuple[str, str],
                                              List[Tuple[Directive,
                                                         ImporterType]]]
     ) -> None:
-        """Process the output for the extracted and deduplicated entries.
-        
-        This abstract method must be implemented by subclasses to define how
-        to process the final output. It corresponds to phase 6 of the merge process.
+        """Write the extracted and deduplicated entries to files.
         
         Args:
             entries_by_account_month: Dictionary mapping (account, year_month) tuples to 
                                      lists of (entry, importer) tuples
-            entries_by_dest_file: Dictionary mapping destination file paths to lists of existing entries
         """
-        pass
+        for (account, year_month
+             ), entry_importer_pairs in entries_by_account_month.items():
+            dest_file = self._get_account_file_path(account, year_month)
+            if self.quiet == 0:
+                if self.dry_run:
+                    click.echo(f"Dry run: would write to {dest_file}")
+                else:
+                    click.echo(f"Writing to {dest_file}")
+
+            # Use the FileMerger to merge entries
+            self.file_merger.merge_entries(
+                dest_file=dest_file,
+                entry_importer_pairs=entry_importer_pairs,
+                dry_run=self.dry_run)
+
+    def _get_account_file_path(self, account: str, year_month: str) -> str:
+        """Construct the file path for an account and year-month based on Beansprout directory structure.
+        
+        Args:
+            account: The account name, e.g., "Assets:Cash:Wallet".
+            year_month: The year and month in YYYYMM format.
+            
+        Returns:
+            The file path relative to the destination directory, e.g.,
+            "transactions/Assets/Cash/Wallet/202505.beancount".
+        """
+        # Split the account by colon to get the components
+        account_components = account.split(":")
+        # Create the path under the "transactions" directory
+        path_components = ["transactions"] + account_components
+        # Create the directory path
+        dir_path = os.path.join(self.destination, *path_components)
+        # Return the full file path
+        return os.path.join(dir_path, f"{year_month}.beancount")

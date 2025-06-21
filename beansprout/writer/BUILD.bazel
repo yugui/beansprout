@@ -1,0 +1,109 @@
+"""Build rules for the beansprout file writer package."""
+
+load("@beansprout_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+py_library(
+    name = "writer",
+    srcs = ["__init__.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":file_merger",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    deps = [
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "file_merger",
+    srcs = ["file_merger.py"],
+    deps = [
+        ":file_rewriter",
+        ":types",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "file_rewriter",
+    srcs = ["file_rewriter.py"],
+    deps = [
+        ":text_preserving_parser",
+        "//beansprout/importer",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "text_preserving_parser",
+    srcs = ["text_preserving_parser.py"],
+    deps = [
+        ":types",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "text_preserving_parser_test",
+    srcs = ["text_preserving_parser_test.py"],
+    data = glob(["testdata/parser/*.beancount"]),
+    deps = [
+        ":text_preserving_parser",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "file_rewriter_test",
+    srcs = ["file_rewriter_test.py"],
+    deps = [
+        ":file_rewriter",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "file_merger_test",
+    srcs = ["file_merger_test.py"],
+    deps = [
+        ":file_merger",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_library(
+    name = "identity_importer",
+    testonly = True,
+    srcs = ["identity_importer.py"],
+    deps = [
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
+
+py_test(
+    name = "identity_importer_test",
+    srcs = ["identity_importer_test.py"],
+    deps = [
+        ":identity_importer",
+        requirement("beancount"),
+        requirement("beangulp"),
+    ],
+)
