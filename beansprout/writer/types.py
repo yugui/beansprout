@@ -122,7 +122,12 @@ class NewEntryBlock:
             # Comment out each line of the entry
             entry_string = '; ' + entry_string.rstrip('\n').replace(
                 '\n', '\n; ') + '\n'
-        return entry_string + '\n'
+
+        # Only add newline if the entry_string doesn't already end with one
+        if not entry_string.endswith('\n'):
+            entry_string += '\n'
+
+        return entry_string
 
 
 Block: TypeAlias = Union[EntryWithLines, CommentedEntryWithLines,

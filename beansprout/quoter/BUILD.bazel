@@ -12,6 +12,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//beansprout/quoter/sources",
+        "//beansprout/writer",
         requirement("beancount"),
         requirement("beanprice"),
         requirement("requests"),

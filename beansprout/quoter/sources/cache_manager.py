@@ -173,7 +173,7 @@ class DBMCacheManager(CacheManager):
 
             # Store in database
             self._db[key.encode()] = pickle.dumps(cache_value)
-            self._db.sync()  # Ensure data is written
+            self._safe_sync()  # Ensure data is written if supported
 
             # Check if we need to enforce size limits
             self._enforce_size_limit()
@@ -231,7 +231,7 @@ class DBMCacheManager(CacheManager):
                     del self._db[key]
 
                 # Sync to ensure changes are persisted
-                self._db.sync()
+                self._safe_sync()
 
                 logging.debug(
                     "Removed %d entries from cache to enforce size limit",
@@ -259,6 +259,19 @@ class DBMCacheManager(CacheManager):
                 logging.error("Failed to create new cache file: %s", str(e2))
                 raise RuntimeError(
                     f"Could not create cache file: {str(e2)}") from e2
+
+    def _safe_sync(self) -> None:
+        """Safely call sync() on the database if supported.
+        
+        Some DBM implementations don't support sync(), so we need to
+        handle this gracefully.
+        """
+        try:
+            if hasattr(self._db, 'sync'):
+                self._db.sync()
+        except (AttributeError, OSError) as e:
+            # Some DBM implementations may not support sync or may fail
+            logging.debug("Database sync not supported or failed: %s", str(e))
 
     def get_stats(self) -> Dict[str, Union[int, float]]:
         """Return cache statistics.
