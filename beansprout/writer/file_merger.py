@@ -117,19 +117,15 @@ class FileMerger:
             new_blocks: List[NewEntryBlock] = []
             for (entry, importer) in entry_importer_pairs:
                 duplicate = self._get_duplicate(entry)
-                if not duplicate:
-                    counter_new += 1
-                    new_blocks.append(
-                        NewEntryBlock(entry=entry, should_comment=False))
-                    continue
-
-                if duplicate.meta['filename'] == dest_file:
+                if duplicate and duplicate.meta['filename'] == dest_file:
                     counter_duplicate += 1
                     continue  # Skip entries that are already in the file
 
-                # Temporarily reset the duplicate metadata before the re-deduplication
                 orig_duplicate = duplicate
-                del entry.meta['__duplicate__']
+                if duplicate:
+                    # Temporarily reset the duplicate metadata before the re-deduplication
+                    del entry.meta['__duplicate__']
+
                 # Try de-duplicating again to compare with the existing entries
                 importer.deduplicate([entry], existing_entries)
                 duplicate = self._get_duplicate(entry)
@@ -137,6 +133,13 @@ class FileMerger:
                     # If the duplicate is already in the file, skip it
                     counter_duplicate += 1
                     continue
+
+                if not orig_duplicate:
+                    counter_new += 1
+                    new_blocks.append(
+                        NewEntryBlock(entry=entry, should_comment=False))
+                    continue
+
                 # Restore the original duplicate metadata as it may be needed later
                 entry.meta['__duplicate__'] = orig_duplicate
 

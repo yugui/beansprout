@@ -114,12 +114,12 @@ class Merge(Generic[ImporterType]):
         # Phase 2: Sort the extracted entries
         beangulp.extract.sort_extracted_entries(extracted)
 
-        # Phase 3: Deduplicate extracted entries against existing entries
-        self._mark_duplicate_entries(extracted)
-
-        # Phase 4: Apply hooks to the extracted entries
+        # Phase 3: Apply hooks to the extracted entries
         for func in self.hooks:
             extracted = func(extracted, self.existing_entries)
+
+        # Phase 4: Deduplicate extracted entries against existing entries
+        self._mark_duplicate_entries(extracted)
 
         # Phase 5: Group entries by account and year-month, preserving importer information
         entries_by_account_month = self._group_entries_by_account_month(
