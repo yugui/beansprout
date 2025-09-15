@@ -2,6 +2,15 @@ load("@beansprout_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "expression_parser",
+    srcs = ["expression_parser.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("beancount"),
+    ],
+)
+
+py_library(
     name = "quoter",
     srcs = [
         "__init__.py",
@@ -11,6 +20,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":expression_parser",
         "//beansprout/quoter/sources",
         "//beansprout/writer",
         requirement("beancount"),

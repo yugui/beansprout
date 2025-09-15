@@ -28,6 +28,8 @@ from beansprout.quoter.commodity_finder import CommodityFinder
 from beansprout.quoter.quote_fetcher import QuoteFetcher
 from beansprout.quoter.quote_writer import QuoteWriter
 from beansprout.quoter.sources import cache_manager
+from beansprout.quoter.expression_parser import parse_price_expression, get_example_expressions
+import re
 
 
 def complete_existing_file(config: Config,
@@ -145,24 +147,101 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
         sys.exit(status)
 
 
+def parse_expressions_into_commodities(expression: str) -> List[Commodity]:
+    """Parse a price expression into Commodity objects.
+    
+    Args:
+        expression: Expression in format "CURRENCY:SOURCE/SYMBOL" or more complex formats
+                   like "USD:yahoo/AAPL CAD:yahoo/AAPL.TO" or "USD:source1/TICKER1,source2/TICKER2"
+        
+    Returns:
+        List of Commodity objects with appropriate metadata for each ticker
+        
+    Raises:
+        ValueError: If expression format is invalid
+    """
+    try:
+        # Parse the expression using the comprehensive parser
+        source_specs_dict = parse_price_expression(expression)
+    except ValueError as e:
+        examples = get_example_expressions()
+        raise ValueError(f"Invalid expression '{expression}': {e}\n"
+                         f"Supported formats:\n" +
+                         "\n".join(f"  - {example}" for example in examples))
+
+    commodities = []
+
+    # Create a commodity for each unique ticker across all currencies/sources
+    seen_tickers = set()
+    for currency, source_specs in source_specs_dict.items():
+        for source_spec in source_specs:
+            ticker = source_spec.ticker
+
+            # Use ticker as the commodity name (avoiding duplicates)
+            if ticker not in seen_tickers:
+                seen_tickers.add(ticker)
+
+                # Create commodity with the ticker as currency and full expression as price metadata
+                meta = {
+                    'price': expression,
+                    'filename': '<expression>',
+                    'lineno': 0,
+                }
+
+                commodity = data.Commodity(meta=meta,
+                                           date=datetime.date.today(),
+                                           currency=ticker)
+                commodities.append(commodity)
+
+    if not commodities:
+        raise ValueError(
+            f"No valid commodities found in expression '{expression}'")
+
+    return commodities
+
+
 @click.command('quote')
-@click.argument('filenames',
-                nargs=-1,
-                type=click.Path(exists=True, resolve_path=True),
-                required=True)
+@click.argument('filenames', nargs=-1)
 @click.option('--date',
               '-d',
               type=click.DateTime(formats=["%Y-%m-%d"]),
               help='Fetch prices for this specific date.')
+@click.option(
+    '--start-date',
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help='Start date for bulk price fetching (used with --end-date).')
+@click.option(
+    '--end-date',
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help='End date for bulk price fetching (used with --start-date).')
+@click.option('--update',
+              '-u',
+              is_flag=True,
+              help='Fetch latest prices only (ignore --date).')
+@click.option('--clobber',
+              '-c',
+              is_flag=True,
+              help='Overwrite existing quote files.')
+@click.option('--ignore-errors',
+              is_flag=True,
+              help='Continue processing even if some commodities fail.')
 @click.option('--inactive',
               '-i',
               is_flag=True,
               help='Include inactive commodities.')
 @click.option(
-    '--custom-only',
-    '-c',
+    '--expressions',
+    '-e',
     is_flag=True,
-    help='Use only custom quoters from beansprout.quoter.sources package.')
+    help='Parse arguments as price expressions instead of filenames.')
+@click.option('--pattern',
+              type=str,
+              help='Filter commodities by regex pattern on their symbols.')
+@click.option(
+    '--source',
+    '-s',
+    multiple=True,
+    help='Filter commodities by source name (can be used multiple times).')
 @click.option('--verbose',
               '-v',
               count=True,
@@ -186,8 +265,11 @@ def _merge(ctx, src, destination, existing_file, reverse, failfast, verbose,
     help=
     'Path to the cache file (default: ~/.cache/beansprout/quote-cache.dbm).')
 def _quote(filenames: List[str], date: Optional[datetime.datetime],
-           inactive: bool, custom_only: bool, verbose: int, dry_run: bool,
-           destination: str, no_cache: bool,
+           start_date: Optional[datetime.datetime],
+           end_date: Optional[datetime.datetime], update: bool, clobber: bool,
+           ignore_errors: bool, inactive: bool, expressions: bool,
+           pattern: Optional[str], source: List[str], verbose: int,
+           dry_run: bool, destination: str, no_cache: bool,
            cache_file: Optional[str]) -> None:
     """Fetch price quotes for commodities using custom quoters.
     
@@ -205,7 +287,22 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     cache file location with --cache-file.
     
     FILENAMES are one or more beancount files containing commodity definitions.
+    
+    With --expressions (-e), arguments are parsed as price expressions instead of files.
+    Expression format: "CURRENCY:SOURCE/SYMBOL" (e.g., "USD:yahoo/AAPL")
     """
+    # Validate arguments
+    if not filenames:
+        click.echo("Error: Must provide filenames or expressions as arguments",
+                   err=True)
+        sys.exit(1)
+
+    # When not using expressions, validate that files exist
+    if not expressions:
+        for filename in filenames:
+            if not os.path.exists(filename):
+                click.echo(f"Error: File not found: {filename}", err=True)
+                sys.exit(1)
     # Set up logging
     logging_level = logging.WARNING
     if verbose == 1:
@@ -218,43 +315,114 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
     # Set up the commodity finder
     finder = CommodityFinder()
 
-    # Load all entries from all input files
-    all_entries: List[Directive] = []
-    all_errors: List[str] = []
+    # Load commodities either from files or expressions
+    if expressions:
+        # Parse expressions into commodities
+        all_commodities = []
+        for expression in filenames:
+            try:
+                commodities = parse_expressions_into_commodities(expression)
+                all_commodities.extend(commodities)
+                logging.debug(
+                    f"Parsed expression: {expression} -> {[c.currency for c in commodities]}"
+                )
+            except ValueError as e:
+                click.echo(f"Error: {e}", err=True)
+                sys.exit(1)
 
-    logging.info(f"Loading entries from {len(filenames)} file(s)")
-
-    for filename in filenames:
-        logging.debug(f"  Loading file: {filename}")
-
-        entries, errors, options_map = loader.load_file(filename=filename)
-        all_entries.extend(entries)
-        all_errors.extend(errors)
-
-    # Report any errors
-    if all_errors:
-        for error in all_errors:
-            print(error, file=sys.stderr)
-        if len(all_errors) > 10:
-            print(f"Found {len(all_errors)} errors in total", file=sys.stderr)
-
-    # Find all commodities
-    all_commodities = finder.find_all_commodities(entries=all_entries)
-    logging.info(f"Found {len(all_commodities)} commodities")
-
-    # Filter active commodities
-    if not inactive:
-        active_commodities = finder.filter_active_commodities(
-            commodities=all_commodities)
         logging.info(
-            f"Filtered to {len(active_commodities)} active commodities")
+            f"Parsed {len(all_commodities)} commodities from expressions")
     else:
-        active_commodities = all_commodities
+        # Load all entries from all input files
+        all_entries: List[Directive] = []
+        all_errors: List[str] = []
+
+        logging.info(f"Loading entries from {len(filenames)} file(s)")
+
+        for filename in filenames:
+            logging.debug(f"  Loading file: {filename}")
+
+            entries, errors, options_map = loader.load_file(filename=filename)
+            all_entries.extend(entries)
+            all_errors.extend(errors)
+
+        # Report any errors
+        if all_errors:
+            for error in all_errors:
+                print(error, file=sys.stderr)
+            if len(all_errors) > 10:
+                print(f"Found {len(all_errors)} errors in total",
+                      file=sys.stderr)
+
+        # Find all commodities
+        all_commodities = finder.find_all_commodities(entries=all_entries)
+        logging.info(f"Found {len(all_commodities)} commodities")
+
+    # Apply filtering chain
+    working_commodities = all_commodities
+
+    # Filter active commodities (unless --inactive is specified)
+    if not inactive:
+        working_commodities = finder.filter_active_commodities(
+            working_commodities)
+        logging.info(
+            f"Filtered to {len(working_commodities)} active commodities")
+    else:
         logging.info("Including all commodities (--inactive flag set)")
 
-    # Find the price date to use
-    price_date = date.date() if date else datetime.date.today()
-    logging.info(f"Using price date: {price_date}")
+    # Apply pattern filter if specified
+    if pattern:
+        try:
+            working_commodities = finder.filter_by_pattern(
+                working_commodities, pattern)
+            logging.info(
+                f"Pattern filter '{pattern}' resulted in {len(working_commodities)} commodities"
+            )
+        except re.error as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+
+    # Apply source filter if specified
+    if source:
+        source_set = set(source)
+        working_commodities = finder.filter_by_source(working_commodities,
+                                                      source_set)
+        logging.info(
+            f"Source filter {source} resulted in {len(working_commodities)} commodities"
+        )
+
+    active_commodities = working_commodities
+
+    # Determine the fetching mode and parameters
+    if update:
+        # In update mode, fetch latest prices (no specific date)
+        price_date = None
+        bulk_mode = False
+        logging.info("Using update mode: fetching latest prices")
+    elif start_date and end_date:
+        # Bulk fetching mode
+        bulk_mode = True
+        start_date_obj = start_date.date()
+        end_date_obj = end_date.date()
+        logging.info(
+            f"Using bulk mode: fetching prices from {start_date_obj} to {end_date_obj}"
+        )
+    elif date:
+        # Specific date provided
+        price_date = date.date()
+        bulk_mode = False
+        logging.info(f"Using specific date: {price_date}")
+    else:
+        # Default: fetch latest prices (no specific date)
+        price_date = None
+        bulk_mode = False
+        logging.info("Using latest price mode (no date specified)")
+
+    # Validate bulk mode parameters
+    if (start_date is None) != (end_date is None):
+        click.echo("Error: --start-date and --end-date must be used together",
+                   err=True)
+        sys.exit(1)
 
     # Set up cache manager based on options
     def open_cache():
@@ -267,23 +435,63 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
             return cache
 
     with open_cache() as cache:
-        fetcher = QuoteFetcher(custom_only=custom_only, cache_mgr=cache)
+        fetcher = QuoteFetcher(cache_mgr=cache)
 
-        # Fetch quotes for each active commodity
+        # Fetch quotes using the new bulk methods
         price_entries = []
-        for commodity in active_commodities:
-            logging.debug(f"Fetching quote for {commodity.currency}")
 
-            price_entry = fetcher.fetch_quote(commodity=commodity,
-                                              quote_date=price_date)
+        if verbose:
+            click.echo(
+                f"Fetching quotes for {len(active_commodities)} commodities")
 
-            if price_entry:
-                price_entries.append(price_entry)
+        try:
+            if bulk_mode:
+                # Use bulk fetching for date range
+                price_entries = fetcher.fetch_quote_series_bulk(
+                    commodities=active_commodities,
+                    start_date=start_date_obj,
+                    end_date=end_date_obj)
+
                 logging.debug(
-                    f"  Got price: {price_entry.amount} {price_entry.currency}"
+                    f"Got {len(price_entries)} total prices for date range {start_date_obj} to {end_date_obj}"
                 )
             else:
-                logging.warning(f"  No price found for {commodity.currency}")
+                # Use single price fetching
+                if price_date is None:
+                    # Fetch latest prices
+                    price_entries = fetcher.fetch_latest_quotes(
+                        commodities=active_commodities)
+                else:
+                    # Fetch historical prices for specific date
+                    price_entries = fetcher.fetch_historical_quotes(
+                        commodities=active_commodities, quote_date=price_date)
+
+                logging.debug(f"Got {len(price_entries)} total price(s)")
+                # Log details of each price
+                for price_entry in price_entries:
+                    logging.debug(
+                        f"  {price_entry.amount} {price_entry.currency} on {price_entry.date}"
+                    )
+
+        except Exception as e:
+            error_msg = f"Error during bulk quote fetching: {e}"
+            logging.error(error_msg)
+
+            if not ignore_errors:
+                click.echo(f"Error: {error_msg}", err=True)
+                sys.exit(1)
+
+    # Calculate failed commodities for reporting
+    successful_currencies = {price.currency for price in price_entries}
+    failed_commodities = [
+        commodity.currency for commodity in active_commodities
+        if commodity.currency not in successful_currencies
+    ]
+
+    if failed_commodities:
+        logging.warning(
+            f"Failed to fetch quotes for {len(failed_commodities)} commodities: {', '.join(failed_commodities)}"
+        )
 
     logging.info(f"Fetched {len(price_entries)} price entries")
 
@@ -296,7 +504,7 @@ def _quote(filenames: List[str], date: Optional[datetime.datetime],
         for price in price_entries:
             click.echo(printer.format_entry(price).rstrip())
     else:
-        written_files = writer.write_prices(price_entries)
+        written_files = writer.write_prices(price_entries, clobber=clobber)
 
         if verbose:
             total_files = sum(len(files) for files in written_files.values())

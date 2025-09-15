@@ -1,5 +1,5 @@
 load("@beansprout_deps//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
 py_binary(
@@ -46,5 +46,15 @@ py_wheel(
     version = "0.1.0",
     deps = [
         ":beansprout_pkg",
+    ],
+)
+
+py_test(
+    name = "bean_sprout_test",
+    srcs = ["bean_sprout_test.py"],
+    deps = [
+        ":bean-sprout",
+        requirement("click"),
+        requirement("beancount"),
     ],
 )

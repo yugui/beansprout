@@ -8,10 +8,12 @@ $destination/quotes/$symbol/YYYYmm.beancount
 
 import os
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
+import datetime
 
 from beancount.core.data import Price
 from beancount.parser import printer
+from beancount import loader
 
 from beansprout.writer.file_rewriter import FileRewriter
 from beansprout.writer.types import Block, BlockType, EntryWithLines, CommentedEntryWithLines, NewEntryBlock
@@ -41,11 +43,14 @@ class QuoteWriter:
         self.logger.debug(
             f"Initialized quote writer with base path: {self.quotes_dir}")
 
-    def write_prices(self, prices: List[Price]) -> Dict[str, List[str]]:
+    def write_prices(self,
+                     prices: List[Price],
+                     clobber: bool = False) -> Dict[str, List[str]]:
         """Write price entries to appropriate destination files.
         
         Args:
             prices: List of Price directives to write.
+            clobber: If True, overwrite existing prices. If False, skip existing prices.
             
         Returns:
             A dictionary mapping commodity symbols to lists of created file paths.
@@ -54,8 +59,21 @@ class QuoteWriter:
             self.logger.info("No prices to write")
             return {}
 
+        # Filter out existing prices unless clobber is True
+        filtered_prices = self.filter_new_prices(prices, clobber)
+
+        if not filtered_prices:
+            self.logger.info(
+                "No new prices to write (all prices already exist)")
+            return {}
+
+        if len(filtered_prices) < len(prices):
+            self.logger.info(
+                f"Filtered {len(prices) - len(filtered_prices)} existing prices, writing {len(filtered_prices)} new prices"
+            )
+
         # Group and deduplicate price entries by commodity, month, and date
-        price_map = self._group_prices_by_symbol_and_month(prices)
+        price_map = self._group_prices_by_symbol_and_month(filtered_prices)
 
         # Track written files
         written_files: Dict[str, List[str]] = {}
@@ -103,6 +121,74 @@ class QuoteWriter:
         """
         symbol_dir = os.path.join(self.quotes_dir, symbol)
         return os.path.join(symbol_dir, f"{month_key}.beancount")
+
+    def get_existing_quote_dates(self, symbol: str,
+                                 month_key: str) -> Set[datetime.date]:
+        """Get the set of dates for which quotes already exist in a file.
+        
+        Args:
+            symbol: The commodity symbol.
+            month_key: The month key in YYYYMM format.
+            
+        Returns:
+            Set of dates for which quotes already exist.
+        """
+        file_path = self.get_destination_path(symbol, month_key)
+
+        if not os.path.exists(file_path):
+            return set()
+
+        try:
+            entries, errors, _ = loader.load_file(file_path)
+            if errors:
+                self.logger.warning(f"Errors loading {file_path}: {errors}")
+                return set()
+
+            # Extract dates from Price entries
+            quote_dates = set()
+            for entry in entries:
+                if entry.__class__.__name__ == 'Price' and entry.currency == symbol:
+                    quote_dates.add(entry.date)
+
+            return quote_dates
+        except Exception as e:
+            self.logger.warning(
+                f"Error reading existing quotes from {file_path}: {e}")
+            return set()
+
+    def filter_new_prices(self,
+                          prices: List[Price],
+                          clobber: bool = False) -> List[Price]:
+        """Filter prices to only include those that don't already exist.
+        
+        Args:
+            prices: List of Price directives to filter.
+            clobber: If True, don't filter out existing prices.
+            
+        Returns:
+            List of Price directives that don't already exist (unless clobber=True).
+        """
+        if clobber:
+            return prices
+
+        # Group prices by symbol and month to check efficiently
+        filtered_prices = []
+
+        for price in prices:
+            symbol = price.currency
+            month_key = price.date.strftime("%Y%m")
+
+            # Get existing dates for this symbol/month combination
+            existing_dates = self.get_existing_quote_dates(symbol, month_key)
+
+            # Only include if the date doesn't already exist
+            if price.date not in existing_dates:
+                filtered_prices.append(price)
+            else:
+                self.logger.info(
+                    f"Skipping existing quote for {symbol} on {price.date}")
+
+        return filtered_prices
 
     def _group_prices_by_symbol_and_month(
             self,

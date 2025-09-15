@@ -18,6 +18,51 @@ Multiple sources per currency are supported with comma separation and are tried 
 
 The dispatcher tries each source in order until one succeeds and caches the results.
 
+## Batch Interface for Source Implementations
+
+Sources can optionally implement batch methods for improved performance when fetching
+multiple tickers at once. If a source implements these methods, they will be used
+automatically. If not, the source will be wrapped with BatchSourceWrapper to provide
+batch capability.
+
+Optional batch methods that sources can implement:
+
+    def get_latest_prices_batch(self, tickers: List[str]) -> Dict[str, Optional[SourcePrice]]:
+        \"\"\"Fetch latest prices for multiple tickers.
+        
+        Args:
+            tickers: List of ticker symbols to fetch prices for.
+            
+        Returns:
+            Dictionary mapping ticker -> SourcePrice (or None if failed).
+        \"\"\"
+
+    def get_historical_prices_batch(self, tickers: List[str], 
+                                   time: datetime.datetime) -> Dict[str, Optional[SourcePrice]]:
+        \"\"\"Fetch historical prices for multiple tickers.
+        
+        Args:
+            tickers: List of ticker symbols to fetch prices for.
+            time: The datetime to fetch historical prices for.
+            
+        Returns:
+            Dictionary mapping ticker -> SourcePrice (or None if failed).
+        \"\"\"
+
+    def get_prices_series_batch(self, tickers: List[str], 
+                               time_begin: datetime.datetime,
+                               time_end: datetime.datetime) -> Dict[str, Optional[List[SourcePrice]]]:
+        \"\"\"Fetch price series for multiple tickers.
+        
+        Args:
+            tickers: List of ticker symbols to fetch price series for.
+            time_begin: Start of the time range.
+            time_end: End of the time range.
+            
+        Returns:
+            Dictionary mapping ticker -> List[SourcePrice] (or None if failed).
+        \"\"\"
+
 See https://beancount.github.io/docs/fetching_prices_in_beancount.html for more
 details of the price metadata format.
 """
@@ -25,27 +70,16 @@ details of the price metadata format.
 import datetime
 import importlib
 import logging
-from typing import Dict, List, Optional, Tuple, Iterable, Type, Set, Union, NamedTuple
+from typing import Dict, List, Optional, Tuple, Iterable, Type, Set, Union, Callable, Any
 
 from beansprout.quoter.sources import cache_manager
+from beansprout.quoter.expression_parser import parse_price_expression, SourceSpec
 
 from beancount.core.data import Commodity, Price, Amount
 from beancount.core.number import Decimal
 from beanprice.source import Source as SourceBase, SourcePrice
 
-# A named tuple to represent the price source specification
-#
-# Fields:
-# - quote_currency: The currency in which the price is quoted (e.g., USD)
-# - source: The name of the price source module/provider (e.g., yahoo, coinbase)
-# - ticker: The ticker symbol for the commodity in the source
-# - invert: Boolean flag to invert the price (1/price), useful for currency pairs
-SourceSpec = NamedTuple('SourceSpec', [
-    ('quote_currency', str),
-    ('source', str),
-    ('ticker', str),
-    ('invert', bool),
-])
+# SourceSpec is now imported from expression_parser
 
 # Configure logging
 _logger = logging.getLogger(__name__)
@@ -53,23 +87,121 @@ _logger = logging.getLogger(__name__)
 # Dictionary of source name -> source class
 SOURCES: Dict[str, Type[SourceBase]] = {}
 
+
+class BatchSourceWrapper:
+    """Wrapper that adds batch capability to non-batch-aware sources.
+    
+    This wrapper implements batch methods by calling the underlying source's
+    single-ticker methods multiple times. It provides a uniform batch interface
+    for all sources, regardless of their native batch capabilities.
+    """
+
+    def __init__(self, source: SourceBase):
+        """Initialize the wrapper with a source instance.
+        
+        Args:
+            source: The source instance to wrap with batch capability.
+        """
+        self._source = source
+
+    def get_latest_prices_batch(
+            self, tickers: List[str]) -> Dict[str, Optional[SourcePrice]]:
+        """Fetch latest prices for multiple tickers by calling single-ticker method.
+        
+        Args:
+            tickers: List of ticker symbols to fetch prices for.
+            
+        Returns:
+            Dictionary mapping ticker -> SourcePrice (or None if failed).
+        """
+        results = {}
+        for ticker in tickers:
+            try:
+                result = self._source.get_latest_price(ticker)
+                results[ticker] = result
+            except Exception as e:
+                _logger.debug(f"Failed to get latest price for {ticker}: {e}")
+                results[ticker] = None
+        return results
+
+    def get_historical_prices_batch(
+            self, tickers: List[str],
+            time: datetime.datetime) -> Dict[str, Optional[SourcePrice]]:
+        """Fetch historical prices for multiple tickers by calling single-ticker method.
+        
+        Args:
+            tickers: List of ticker symbols to fetch prices for.
+            time: The datetime to fetch historical prices for.
+            
+        Returns:
+            Dictionary mapping ticker -> SourcePrice (or None if failed).
+        """
+        results = {}
+        for ticker in tickers:
+            try:
+                result = self._source.get_historical_price(ticker, time)
+                results[ticker] = result
+            except Exception as e:
+                _logger.debug(
+                    f"Failed to get historical price for {ticker} at {time}: {e}"
+                )
+                results[ticker] = None
+        return results
+
+    def get_prices_series_batch(
+            self, tickers: List[str], time_begin: datetime.datetime,
+            time_end: datetime.datetime
+    ) -> Dict[str, Optional[List[SourcePrice]]]:
+        """Fetch price series for multiple tickers by calling single-ticker method.
+        
+        Args:
+            tickers: List of ticker symbols to fetch price series for.
+            time_begin: Start of the time range.
+            time_end: End of the time range.
+            
+        Returns:
+            Dictionary mapping ticker -> List[SourcePrice] (or None if failed).
+        """
+        results = {}
+        for ticker in tickers:
+            try:
+                result = self._source.get_prices_series(
+                    ticker, time_begin, time_end)
+                results[ticker] = result
+            except Exception as e:
+                _logger.debug(
+                    f"Failed to get price series for {ticker} from {time_begin} to {time_end}: {e}"
+                )
+                results[ticker] = None
+        return results
+
+    def __getattr__(self, name):
+        """Delegate all other methods and attributes to the wrapped source.
+        
+        Args:
+            name: The attribute or method name being accessed.
+            
+        Returns:
+            The attribute or method from the wrapped source.
+        """
+        return getattr(self._source, name)
+
+
 # Set to track modules we've already tried to import
 _TRIED_MODULES: Set[str] = set()
 
 
-def get_source(source_name: str,
-               custom_only: bool = False) -> Optional[SourceBase]:
+def get_source(source_name: str) -> Optional[SourceBase]:
     """Get a price source instance by name.
     
     This function tries to load and instantiate a price source in the following order:
     1. Check if it's already loaded in SOURCES
     2. Try to load from beansprout.quoter.sources package with "beansprout.quoter.sources." prefix
-    3. Try to load from beanprice.sources with "beanprice.sources." prefix (if custom_only is False)
-    4. Try to interpret the name as a full module path (if custom_only is False)
+    3. Try to load from beanprice.sources with "beanprice.sources." prefix
+    4. Try to interpret the name as a full module path
     
     Args:
         source_name: The name of the source to load
-        custom_only: If True, only try to load from the beansprout.quoter.sources package
         
     Returns:
         An instance of the Source class if found, None otherwise
@@ -90,11 +222,6 @@ def get_source(source_name: str,
                 return source_class()
         except ImportError:
             _logger.debug(f"No source found in {sources_module_name}")
-
-    # If custom_only is True, we stop here
-    if custom_only:
-        _logger.warning(f"No custom price source found for '{source_name}'")
-        return None
 
     # 3. Try to load from beanprice.sources with "beanprice.sources." prefix
     beanprice_module_name = f"beanprice.sources.{source_name}"
@@ -141,259 +268,265 @@ class SourceDispatcher:
     commodity directives, following the format described in the module docstring.
     """
 
-    def __init__(self,
-                 cache_manager: cache_manager.CacheManager,
-                 custom_only: bool = False) -> None:
+    def __init__(self, cache_manager: cache_manager.CacheManager) -> None:
         """Initialize the SourceDispatcher.
         
         Args:
             cache_manager: The cache manager to use for caching price quotes.
-            custom_only: If True, only use custom quoters from the beansprout.quoter.sources directory.
-                         If False, also use built-in beanprice sources.
         """
-        self.custom_only = custom_only
         self._logger = logging.getLogger(__name__)
         self._sources_cache: Dict[str, SourceBase] = {}
 
         # Set the cache manager
         self._cache_manager = cache_manager
 
-    def get_latest_price(self, commodity: Commodity) -> Iterable[Price]:
-        """Get the latest price for a ticker.
-        
-        This implementation expects the ticker to be in the format:
-        "COMMODITY:CURRENCY1:SOURCE1/TICKER1,SOURCE2/TICKER2 CURRENCY2:..."
-        
-        For inversion notation, prefix the ticker with ^ symbol:
-        "COMMODITY:CURRENCY1:SOURCE1/^TICKER1" - will invert the price (1/price)
+    def fetch_latest_prices_batch(
+        self, spec_commodity_pairs: List[Tuple[SourceSpec,
+                                               str]]) -> Dict[str, Price]:
+        """Fetch latest prices for multiple SourceSpecs from same source.
         
         Args:
-            commodity: The commodity to get the price for
+            spec_commodity_pairs: List of (SourceSpec, commodity) tuples for the same source
             
         Returns:
-            An iterable of Price instances, or empty if we failed to fetch.
+            Dictionary mapping ticker to Price directive
         """
-        prices = self._fetch_prices(
-            commodity=commodity,
-            method_name='get_latest_price',
-            reference_date=datetime.date.today(),
-        )
-        return prices.values()
 
-    def get_historical_price(self, commodity: Commodity,
-                             time: datetime.datetime) -> Iterable[Price]:
-        """Get a historical price for a ticker.
-        
-        This implementation expects the ticker to be in the format:
-        "COMMODITY:CURRENCY1:SOURCE1/TICKER1,SOURCE2/TICKER2 CURRENCY2:..."
-        
-        For inversion notation, prefix the ticker with ^ symbol:
-        "COMMODITY:CURRENCY1:SOURCE1/^TICKER1" - will invert the price (1/price)
+        def fetch_latest(source: SourceBase,
+                         tickers: List[str]) -> Dict[str, SourcePrice]:
+            return source.get_latest_prices_batch(tickers)
+
+        return self._fetch_prices_batch_generic(spec_commodity_pairs,
+                                                fetch_latest,
+                                                is_series=False)
+
+    def fetch_historical_prices_batch(
+            self, spec_commodity_pairs: List[Tuple[SourceSpec, str]],
+            time: datetime.datetime) -> Dict[str, Price]:
+        """Fetch historical prices for multiple SourceSpecs from same source.
         
         Args:
-            commodity: The commodity to get the price for
-            time: A datetime.datetime instance at which to query for the price
+            spec_commodity_pairs: List of (SourceSpec, commodity) tuples for the same source
+            time: The datetime to fetch historical prices for
             
         Returns:
-            An iterable of Price instances, or empty if we failed to fetch.
+            Dictionary mapping ticker to Price directive
         """
+
+        def fetch_historical(source: SourceBase,
+                             tickers: List[str]) -> Dict[str, SourcePrice]:
+            return source.get_historical_prices_batch(tickers, time)
+
         date = time.date() if isinstance(time, datetime.datetime) else time
-        prices = self._fetch_prices(
-            commodity=commodity,
-            method_name='get_historical_price',
-            args=(time, ),
-            reference_date=date,
-        )
-        return prices.values()
+        return self._fetch_prices_batch_generic(spec_commodity_pairs,
+                                                fetch_historical,
+                                                is_series=False,
+                                                date=date)
 
-    def get_prices_series(self, commodity: Commodity,
-                          time_begin: datetime.datetime,
-                          time_end: datetime.datetime) -> List[Price]:
-        """Get a series of prices for a ticker over a range of dates.
-        
-        This implementation expects the ticker to be in the format:
-        "COMMODITY:CURRENCY1:SOURCE1/TICKER1,SOURCE2/TICKER2 CURRENCY2:..."
-        
-        For inversion notation, prefix the ticker with ^ symbol:
-        "COMMODITY:CURRENCY1:SOURCE1/^TICKER1" - will invert all prices in the series (1/price)
+    def fetch_prices_series_batch(
+            self, spec_commodity_pairs: List[Tuple[SourceSpec, str]],
+            time_begin: datetime.datetime,
+            time_end: datetime.datetime) -> Dict[str, List[Price]]:
+        """Fetch price series for multiple SourceSpecs from same source.
         
         Args:
-            commodity: The commodity to get prices for
-            time_begin: The earliest timestamp whose prices to include
-            time_end: The latest timestamp whose prices to include
+            spec_commodity_pairs: List of (SourceSpec, commodity) tuples for the same source
+            time_begin: Start of the time range
+            time_end: End of the time range
             
         Returns:
-            A list of Price instances, sorted by date/time, or empty if we failed to fetch
+            Dictionary mapping ticker to list of Price directives
         """
-        return self._fetch_price_series(commodity, time_begin, time_end)
+
+        def fetch_series(source: SourceBase,
+                         tickers: List[str]) -> Dict[str, List[SourcePrice]]:
+            return source.get_prices_series_batch(tickers, time_begin,
+                                                  time_end)
+
+        return self._fetch_prices_batch_generic(spec_commodity_pairs,
+                                                fetch_series,
+                                                is_series=True)
 
     def _get_or_create_source(self, source_name: str) -> Optional[SourceBase]:
-        """Get or create a source by name.
+        """Get or create a source by name, wrapping with batch capability if needed.
         
         Args:
             source_name: The name of the source to get
             
         Returns:
-            A Source instance if found, None otherwise
+            A Source instance (possibly wrapped with batch capability) if found, None otherwise
         """
         if source_name in self._sources_cache:
             return self._sources_cache[source_name]
 
-        source = get_source(source_name=source_name,
-                            custom_only=self.custom_only)
+        source = get_source(source_name=source_name)
         if source:
+            # Wrap the source with batch capability if it doesn't have native batch methods
+            if not hasattr(source, 'get_latest_prices_batch'):
+                source = BatchSourceWrapper(source)
+
             self._sources_cache[source_name] = source
 
         return source
 
-    def _get_source_specs(self,
-                          commodity: Commodity) -> Dict[str, List[SourceSpec]]:
-        """Extract price sources from commodity metadata.
-        
-        The price metadata format is: "CURRENCY1:SOURCE1/TICKER1 CURRENCY2:SOURCE2/TICKER2 ..."
-        For example: "USD:yahoo/AAPL CAD:yahoo/AAPL.TO"
-        
-        Multiple sources for the same currency can be specified with comma separations:
-        "USD:source1/TICKER1,source2/TICKER2"
-        
-        Inversion notation is supported by prefixing the ticker with ^ symbol:
-        "USD:yahoo/^CADUSD=X" (inverts the CADUSD rate to get USD/CAD)
+    def _fetch_prices_batch_generic(
+        self,
+        spec_commodity_pairs: List[Tuple[SourceSpec, str]],
+        source_method_func: Callable[[SourceBase, List[str]],
+                                     Union[Dict[str, SourcePrice],
+                                           Dict[str, List[SourcePrice]]]],
+        is_series: bool = False,
+        date: Optional[datetime.date] = None
+    ) -> Dict[str, Union[Price, List[Price]]]:
+        """Generic method to fetch prices using batch operations.
         
         Args:
-            commodity: Commodity directive to extract price sources from.
+            spec_commodity_pairs: List of (SourceSpec, commodity) tuples for the same source
+            source_method_func: Function that takes (source, tickers) and returns source results
+            is_series: Whether this is a series fetch (returns List[Price]) or single fetch (returns Price)
+            date: Optional date for historical prices (None for latest prices)
             
         Returns:
-            List of SourceSpec tuples with (currency, source, ticker, invert) for each price source.
-            The invert flag indicates whether the price should be inverted (1/price).
+            Dictionary mapping ticker to Price or List[Price] objects
         """
-        if 'price' not in commodity.meta:
+        if not spec_commodity_pairs:
             return {}
 
-        price_meta = commodity.meta['price']
-        sources = {}
+        # All specs should be for the same source
+        source_name = spec_commodity_pairs[0][0].source
+        source = self._get_or_create_source(source_name)
+        if not source:
+            return {}
 
-        # Split by spaces to get each currency:source/ticker pair
-        for pair in price_meta.split():
-            if ':' not in pair:
-                continue
+        try:
+            # Extract tickers from specs
+            tickers = [spec.ticker for spec, _ in spec_commodity_pairs]
 
-            currency, source_spec = pair.split(':', 1)
-            if currency not in sources:
-                sources[currency] = []
+            # Call the provided function with source and tickers
+            results = source_method_func(source, tickers)
 
-            # Handle multiple sources for the same currency (comma-separated)
-            for source_ticker in source_spec.split(','):
-                if '/' not in source_ticker:
-                    self._logger.warning(
-                        f"Invalid source/ticker format: {source_ticker}")
-                    continue
+            # Process results based on type
+            if is_series:
+                return self._process_series_results(spec_commodity_pairs,
+                                                    results)
+            else:
+                return self._process_single_price_results(
+                    spec_commodity_pairs, results, date)
 
-                source, ticker = source_ticker.split('/', 1)
+        except Exception as e:
+            self._logger.warning(
+                f"Error fetching prices from {source_name}: {e}")
+            return {}
 
-                # Check if ticker has the inversion notation (^)
-                invert = ticker.startswith('^')
-                if invert:
-                    # Remove the ^ symbol from the ticker
-                    ticker = ticker[1:]
-
-                sources[currency].append(
-                    SourceSpec(quote_currency=currency,
-                               source=source,
-                               ticker=ticker,
-                               invert=invert))
-
-        return sources
-
-    def _try_sources(
-        self,
-        source_specs: List[SourceSpec],
-        method_name: str,
-        args: tuple = (),
-        is_series: bool = False
-    ) -> Optional[Tuple[SourceSpec, Union[SourcePrice, List[SourcePrice]]]]:
-        """Generic method to try multiple price sources with a specified method.
+    def _process_single_price_results(
+            self,
+            spec_commodity_pairs: List[Tuple[SourceSpec, str]],
+            results: Dict[str, SourcePrice],
+            date: Optional[datetime.date] = None) -> Dict[str, Price]:
+        """Process single price results (latest or historical).
         
         Args:
-            source_specs: List of price sources to try
-            method_name: Name of the method to call on the source
-            args: Arguments to pass to the method
-            is_series: Whether the method returns a price series
+            spec_commodity_pairs: List of (SourceSpec, commodity) tuples
+            results: Results from source batch method
+            date: The date for the prices, or None to use today's date
             
         Returns:
-            The result from the first successful price source call
+            Dictionary mapping ticker to Price objects
         """
-        for source_spec in source_specs:
-            source = self._get_or_create_source(source_spec.source)
-            if not source:
-                continue
+        prices = {}
 
-            try:
-                # Check if the source implements the required method
-                if not hasattr(source, method_name):
-                    if is_series:  # Only log for series, as it's optional
-                        continue
-                    else:
-                        self._logger.warning(
-                            f"Source {source_spec.source} does not implement {method_name}"
-                        )
-                        continue
+        # Use provided date or default to today
+        if date is None:
+            date = datetime.date.today()
 
-                # Get the method and call it with the appropriate arguments
-                method = getattr(source, method_name)
-                full_args = (source_spec.ticker, ) + args
-                result = method(*full_args)
+        for spec, commodity in spec_commodity_pairs:
+            source_price = results.get(spec.ticker)
+            if source_price:
+                # Handle inversion if needed
+                if spec.invert and source_price.price != Decimal('0'):
+                    source_price = SourcePrice(
+                        price=Decimal('1') / source_price.price,
+                        time=source_price.time,
+                        quote_currency=spec.quote_currency)
 
-                if not result:
-                    continue
+                # Convert to Price directive
+                price = self._process_single_price_result(
+                    source_spec=spec,
+                    source_price=source_price,
+                    commodity=commodity,
+                    base_currency=spec.quote_currency,
+                    date=date)
+                prices[spec.ticker] = price
 
-                if not source_spec.invert:
-                    return (source_spec, result)
+                # Cache the result
+                if self._cache_manager:
+                    self._cache_manager.put(spec.quote_currency, commodity,
+                                            date, price)
 
-                if is_series:
-                    # Convert to our own SourcePrice instances with inverted prices and updated currency
-                    return (source_spec, [
-                        SourcePrice(
-                            price=Decimal('1') / source_price.price
-                            if source_price.price != Decimal('0') else None,
+        return prices
+
+    def _process_series_results(
+            self, spec_commodity_pairs: List[Tuple[SourceSpec, str]],
+            results: Dict[str, List[SourcePrice]]) -> Dict[str, List[Price]]:
+        """Process price series results.
+        
+        Args:
+            spec_commodity_pairs: List of (SourceSpec, commodity) tuples
+            results: Results from source batch method
+            
+        Returns:
+            Dictionary mapping ticker to list of Price objects
+        """
+        prices_by_ticker = {}
+
+        for spec, commodity in spec_commodity_pairs:
+            source_prices = results.get(spec.ticker)
+            if source_prices:
+                price_list = []
+
+                for source_price in source_prices:
+                    # Handle inversion if needed
+                    if spec.invert and source_price.price != Decimal('0'):
+                        source_price = SourcePrice(
+                            price=Decimal('1') / source_price.price,
                             time=source_price.time,
-                            quote_currency=source_spec.currency)
-                        for source_price in result
-                        if source_price.price != Decimal('0')
-                    ])
-                else:
-                    # We need to handle the possibility of zero value
-                    if result.price == Decimal('0'):
-                        self._logger.warning(
-                            f"Cannot invert zero value from {source_spec.source}/{source_spec.ticker}"
-                        )
-                        continue
+                            quote_currency=spec.quote_currency)
 
-                    # Return with the requested currency
-                    return (source_spec,
-                            SourcePrice(
-                                price=Decimal('1') / result.price,
-                                time=result.time,
-                                quote_currency=result.quote_currency,
-                            ))
+                    # Get the date from the source price
+                    date = source_price.time.date() if isinstance(
+                        source_price.time,
+                        datetime.datetime) else source_price.time
 
-            except Exception as e:
-                self._logger.warning(
-                    f"Error fetching price using {method_name} from {source_spec.source}/{source_spec.ticker}: {e}"
-                )
-                continue
+                    # Convert to Price directive
+                    price = self._process_single_price_result(
+                        source_spec=spec,
+                        source_price=source_price,
+                        commodity=commodity,
+                        base_currency=spec.quote_currency,
+                        date=date)
+                    price_list.append(price)
 
-        return None
+                    # Cache each result
+                    if self._cache_manager:
+                        self._cache_manager.put(spec.quote_currency, commodity,
+                                                date, price)
+
+                # Sort by date
+                price_list.sort(key=lambda p: p.date)
+                prices_by_ticker[spec.ticker] = price_list
+
+        return prices_by_ticker
 
     def _process_single_price_result(self, source_spec: SourceSpec,
-                                     source_price: SourcePrice,
-                                     commodity: Commodity, base_currency: str,
+                                     source_price: SourcePrice, commodity: str,
+                                     base_currency: str,
                                      date: datetime.date) -> Price:
         """Process a single price result into a Price object.
         
         Args:
             source_spec: The source specification used to fetch the price
             source_price: The price result from the source
-            commodity: The commodity being priced
+            commodity: The commodity symbol being priced (e.g., "AAPL")
             base_currency: The base currency for the price
             date: The date for the price
             
@@ -405,166 +538,12 @@ class SourceDispatcher:
             'time': source_price.time.isoformat(),
         }
 
-        if source_spec.invert:
-            # For inverted prices, the source already inverted them in _try_sources for series,
-            # but we need to invert here for single prices
-            quote_currency = source_price.quote_currency if source_price.quote_currency else base_currency
-            return Price(
-                meta=meta,
-                date=date,
-                currency=quote_currency,
-                amount=Amount(number=Decimal('1') / source_price.price,
-                              currency=commodity.currency),
-            )
-        else:
-            quote_currency = source_price.quote_currency if source_price.quote_currency else base_currency
-            return Price(
-                meta=meta,
-                date=date,
-                currency=commodity.currency,
-                amount=Amount(number=source_price.price,
-                              currency=base_currency),
-            )
+        quote_currency = source_price.quote_currency if source_price.quote_currency else base_currency
 
-    def _fetch_prices(
-            self,
-            commodity: Commodity,
-            method_name: str,
-            reference_date: datetime.date,
-            args: tuple = (),
-    ) -> Dict[str, Price]:
-        """Fetch prices for a commodity using the specified method.
-        
-        This method handles the common logic for fetching prices:
-        1. Extract source specs from commodity metadata
-        2. Check cache for each currency
-        3. Try sources until one succeeds
-        4. Process and cache results
-        
-        Args:
-            commodity: The commodity to fetch prices for
-            method_name: The method name to call on the source
-            reference_date: A reference date to use for cache lookups
-            args: Arguments to pass to the method
-            
-        Returns:
-            A dictionary of base_currency -> Price
-        """
-        # Get source specs from commodity metadata
-        source_specs = self._get_source_specs(commodity)
-
-        prices = {}
-        for base_currency, price_sources in source_specs.items():
-            # Check cache first
-            cached_result = self._cache_manager.get(base_currency,
-                                                    commodity.currency,
-                                                    reference_date)
-            if cached_result:
-                self._logger.debug(
-                    f"Using cached price for {base_currency}/{commodity.currency} on {reference_date}"
-                )
-                prices[base_currency] = cached_result
-                continue
-
-            # Try sources until one works
-            result_pair = self._try_sources(price_sources,
-                                            method_name,
-                                            args=args)
-            if not result_pair:
-                self._logger.warning(
-                    f"Failed to get {method_name} for {base_currency}/{commodity.currency}"
-                )
-                continue
-
-            source_spec, result = result_pair
-
-            # Get the actual date from the result if available
-            date = reference_date
-            if result.time:
-                date = result.time.date() if isinstance(
-                    result.time, datetime.datetime) else result.time
-
-            # Process the result into a Price object
-            price = self._process_single_price_result(
-                source_spec=source_spec,
-                source_price=result,
-                commodity=commodity,
-                base_currency=base_currency,
-                date=date)
-
-            # Store in our result dictionary
-            prices[base_currency] = price
-
-            # Log the result
-            self._logger.debug(
-                f"Got {method_name} from {source_spec.source}/{source_spec.ticker} "
-                f"for {base_currency}/{commodity.currency}")
-
-            # Cache the result
-            self._cache_manager.put(base_currency, commodity.currency, date,
-                                    price)
-
-        return prices
-
-    def _fetch_price_series(self, commodity: Commodity,
-                            time_begin: datetime.datetime,
-                            time_end: datetime.datetime) -> List[Price]:
-        """Fetch a price series for a commodity.
-        
-        This method handles the specific logic for fetching price series:
-        1. Extract source specs from commodity metadata
-        2. Try sources until one succeeds for each currency
-        3. Process results into Price objects and cache them
-        
-        Args:
-            commodity: The commodity to fetch prices for
-            time_begin: The start of the time range
-            time_end: The end of the time range
-            
-        Returns:
-            A list of Price objects sorted by date
-        """
-        source_specs = self._get_source_specs(commodity)
-
-        all_prices = []
-        for base_currency, price_sources in source_specs.items():
-            result_pair = self._try_sources(price_sources,
-                                            'get_prices_series',
-                                            args=(time_begin, time_end),
-                                            is_series=True)
-
-            if not result_pair:
-                self._logger.warning(
-                    f"Failed to get price series for {base_currency}/{commodity.currency}"
-                )
-                continue
-
-            source_spec, results = result_pair
-
-            for source_price in results:
-                date = source_price.time.date() if isinstance(
-                    source_price.time,
-                    datetime.datetime) else source_price.time
-
-                price = self._process_single_price_result(
-                    source_spec=source_spec,
-                    source_price=source_price,
-                    commodity=commodity,
-                    base_currency=base_currency,
-                    date=date)
-
-                all_prices.append(price)
-
-                # Cache each price
-                if self._cache_manager:
-                    self._cache_manager.put(base_currency, commodity.currency,
-                                            date, price)
-
-            # Add debug logging
-            self._logger.debug(
-                f"Got {len(results)} prices from {source_spec.source}/{source_spec.ticker} "
-                f"for {base_currency}/{commodity.currency}")
-
-        # Sort prices by date and return
-        all_prices.sort(key=lambda p: p.date)
-        return all_prices
+        # Note: Inversion is now handled in the calling methods before this is called
+        return Price(
+            meta=meta,
+            date=date,
+            currency=commodity,
+            amount=Amount(number=source_price.price, currency=base_currency),
+        )

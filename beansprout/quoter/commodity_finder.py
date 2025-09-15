@@ -6,7 +6,8 @@ and filter them based on their metadata to determine which ones should have
 price quotes fetched.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
+import re
 
 from beancount.core import data
 from beancount.core.data import Directive, Commodity
@@ -61,3 +62,81 @@ class CommodityFinder:
             active.append(commodity)
 
         return active
+
+    def filter_by_pattern(self, commodities: List[Commodity],
+                          pattern: str) -> List[Commodity]:
+        """Filter commodities by regex pattern on their currency symbol.
+        
+        Args:
+            commodities: List of commodity directives to filter.
+            pattern: Regular expression pattern to match against commodity symbols.
+            
+        Returns:
+            List of commodity directives whose symbols match the pattern.
+            
+        Raises:
+            re.error: If the pattern is invalid.
+        """
+        try:
+            compiled_pattern = re.compile(pattern)
+        except re.error as e:
+            raise re.error(f"Invalid regex pattern '{pattern}': {e}")
+
+        filtered = []
+        for commodity in commodities:
+            if compiled_pattern.match(commodity.currency):
+                filtered.append(commodity)
+
+        return filtered
+
+    def filter_by_source(self, commodities: List[Commodity],
+                         sources: Set[str]) -> List[Commodity]:
+        """Filter commodities by source names in their price metadata.
+        
+        Args:
+            commodities: List of commodity directives to filter.
+            sources: Set of source names to match against.
+            
+        Returns:
+            List of commodity directives that use at least one of the specified sources.
+        """
+        filtered = []
+        for commodity in commodities:
+            commodity_sources = self.parse_source_names(commodity)
+            if commodity_sources.intersection(sources):
+                filtered.append(commodity)
+
+        return filtered
+
+    def parse_source_names(self, commodity: Commodity) -> Set[str]:
+        """Parse source names from commodity price metadata.
+        
+        Args:
+            commodity: Commodity directive to parse.
+            
+        Returns:
+            Set of source names found in the price metadata.
+        """
+        if 'price' not in commodity.meta:
+            return set()
+
+        price_metadata = commodity.meta['price']
+        sources = set()
+
+        # Parse format: "USD:yahoo/AAPL,coinbase/BTC JPY:yahoo/MSFT.T"
+        # Split by spaces to get different currency sections
+        currency_sections = price_metadata.split()
+
+        for section in currency_sections:
+            if ':' in section:
+                # Extract the part after the colon
+                after_colon = section.split(':', 1)[1]
+                # Split by comma to get individual source/ticker pairs
+                source_ticker_pairs = after_colon.split(',')
+
+                for pair in source_ticker_pairs:
+                    if '/' in pair:
+                        source_name = pair.split('/')[0]
+                        sources.add(source_name)
+
+        return sources

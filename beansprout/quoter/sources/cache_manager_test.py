@@ -23,7 +23,8 @@ class DBMCacheManagerTest(unittest.TestCase):
 
     def test_cache_key_generation(self):
         """Test that cache keys are generated correctly."""
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager:
             date = datetime.date(2025, 5, 10)
 
             key = manager._get_cache_key('AAPL', 'USD', date)
@@ -35,7 +36,8 @@ class DBMCacheManagerTest(unittest.TestCase):
 
     def test_put_and_get_cache_hit(self):
         """Test storing and retrieving an item from cache."""
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager:
             date = datetime.date(2025, 5, 10)
             quote_data = {'price': 150.25, 'currency': 'USD'}
 
@@ -49,7 +51,8 @@ class DBMCacheManagerTest(unittest.TestCase):
 
     def test_get_cache_miss(self):
         """Test retrieving an item from cache that doesn't exist."""
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager:
             date = datetime.date(2025, 5, 10)
 
             result = manager.get('NONEXISTENT', 'USD', date)
@@ -59,7 +62,8 @@ class DBMCacheManagerTest(unittest.TestCase):
     def test_get_expired_entry(self):
         """Test retrieving an expired item from cache."""
         # Use a very short TTL for testing
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file, ttl_seconds=1) as manager:
+        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file,
+                                           ttl_seconds=1) as manager:
             date = datetime.date(2025, 5, 10)
             quote_data = {'price': 150.25, 'currency': 'USD'}
 
@@ -84,20 +88,23 @@ class DBMCacheManagerTest(unittest.TestCase):
         quote_data = {'price': 150.25, 'currency': 'USD'}
 
         # Store data in first instance
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager1:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager1:
             manager1.put('AAPL', 'USD', date, quote_data)
 
         # Retrieve data in second instance
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager2:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager2:
             result = manager2.get('AAPL', 'USD', date)
             self.assertEqual(quote_data, result)
 
     def test_multiple_entries(self):
         """Test storing and retrieving multiple entries."""
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager:
             date1 = datetime.date(2025, 5, 10)
             date2 = datetime.date(2025, 5, 11)
-            
+
             data1 = {'price': 150.25, 'currency': 'USD'}
             data2 = {'price': 151.50, 'currency': 'USD'}
             data3 = {'price': 2.50, 'currency': 'EUR'}
@@ -118,7 +125,8 @@ class DBMCacheManagerTest(unittest.TestCase):
     def test_size_limit_enforcement(self):
         """Test that the cache enforces the size limit."""
         # Use a small max_entries for testing
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file, max_entries=3) as manager:
+        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file,
+                                           max_entries=3) as manager:
             date = datetime.date(2025, 5, 10)
 
             # Add more entries than the limit
@@ -128,12 +136,14 @@ class DBMCacheManagerTest(unittest.TestCase):
             # Check that size enforcement worked (may remove some older entries)
             # We can't predict exactly which entries will remain due to timestamp ordering
             # but we can verify the mechanism doesn't crash
-            result = manager.get('STOCK4', 'USD', date)  # Last added should be there
+            result = manager.get('STOCK4', 'USD',
+                                 date)  # Last added should be there
             self.assertIsNotNone(result)
 
     def test_stats_tracking(self):
         """Test that cache statistics are tracked correctly."""
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file) as manager:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=self.cache_file) as manager:
             date = datetime.date(2025, 5, 10)
             quote_data = {'price': 150.25, 'currency': 'USD'}
 
@@ -160,13 +170,15 @@ class DBMCacheManagerTest(unittest.TestCase):
 
     def test_creates_cache_directory(self):
         """Test that the cache directory is created if it doesn't exist."""
-        nested_path = os.path.join(self.temp_dir.name, 'nested', 'path', 'cache.dbm')
-        
+        nested_path = os.path.join(self.temp_dir.name, 'nested', 'path',
+                                   'cache.dbm')
+
         # Directory shouldn't exist initially
         self.assertFalse(os.path.exists(os.path.dirname(nested_path)))
 
         # Creating cache manager should create the directory
-        with cache_manager.DBMCacheManager(cache_file_path=nested_path) as manager:
+        with cache_manager.DBMCacheManager(
+                cache_file_path=nested_path) as manager:
             self.assertTrue(os.path.exists(os.path.dirname(nested_path)))
 
             # Should be able to store and retrieve data
@@ -178,13 +190,14 @@ class DBMCacheManagerTest(unittest.TestCase):
 
     def test_is_expired_method(self):
         """Test the _is_expired method."""
-        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file, ttl_seconds=3600) as manager:
+        with cache_manager.DBMCacheManager(cache_file_path=self.cache_file,
+                                           ttl_seconds=3600) as manager:
             now = datetime.datetime.now().timestamp()
-            
+
             # Recent timestamp should not be expired
             self.assertFalse(manager._is_expired(now))
             self.assertFalse(manager._is_expired(now - 1800))  # 30 minutes ago
-            
+
             # Old timestamp should be expired
             self.assertTrue(manager._is_expired(now - 7200))  # 2 hours ago
 
