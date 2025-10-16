@@ -543,7 +543,7 @@ class SourceDispatcher:
         # Note: Inversion is now handled in the calling methods before this is called
         return Price(
             meta=meta,
-            date=date,
+            date=source_price.time.date(),
             currency=commodity,
             amount=Amount(number=source_price.price, currency=base_currency),
         )
