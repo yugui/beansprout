@@ -16,6 +16,7 @@ py_binary(
         "//beansprout/command",
         "//beansprout/config",
         "//beansprout/quoter",
+        "//beansprout/plugins",
     ],
 )
 

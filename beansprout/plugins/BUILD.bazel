@@ -1,6 +1,23 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "plugins",
+    deps = [
+        ":price_completion",
+        ":print",
+        ":trading_validation",
+        ":comprehensive_balance",
+        ":inherit_metadata",
+        ":leafonly",
+        ":infer_metadata",
+        ":check_metadata",
+        ":fiscal_income_expense",
+        ":commodity_pattern",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "price_completion",
     srcs = ["price_completion.py"],
     visibility = ["//visibility:public"],
