@@ -1,0 +1,173 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "price_completion",
+    srcs = ["price_completion.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "price_completion_test",
+    srcs = ["price_completion_test.py"],
+    deps = [
+        ":price_completion",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "print",
+    srcs = ["print.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "trading_validation",
+    srcs = ["trading_validation.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "trading_validation_test",
+    srcs = ["trading_validation_test.py"],
+    deps = [
+        ":trading_validation",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "comprehensive_balance",
+    srcs = ["comprehensive_balance.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "comprehensive_balance_test",
+    srcs = ["comprehensive_balance_test.py"],
+    deps = [
+        ":comprehensive_balance",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "inherit_metadata",
+    srcs = ["inherit_metadata.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "inherit_metadata_test",
+    srcs = ["inherit_metadata_test.py"],
+    deps = [
+        ":inherit_metadata",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "leafonly",
+    srcs = ["leafonly.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "leafonly_test",
+    srcs = ["leafonly_test.py"],
+    deps = [
+        ":leafonly",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "infer_metadata",
+    srcs = ["infer_metadata.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+        "@beansprout_deps//pyyaml",
+    ],
+)
+
+py_test(
+    name = "infer_metadata_test",
+    srcs = ["infer_metadata_test.py"],
+    deps = [
+        ":infer_metadata",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "check_metadata",
+    srcs = ["check_metadata.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "check_metadata_test",
+    srcs = ["check_metadata_test.py"],
+    deps = [
+        ":check_metadata",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "fiscal_income_expense",
+    srcs = ["fiscal_income_expense.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "fiscal_income_expense_test",
+    srcs = ["fiscal_income_expense_test.py"],
+    deps = [
+        ":fiscal_income_expense",
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_library(
+    name = "commodity_pattern",
+    srcs = ["commodity_pattern.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@beansprout_deps//beancount",
+    ],
+)
+
+py_test(
+    name = "commodity_pattern_test",
+    srcs = ["commodity_pattern_test.py"],
+    deps = [
+        ":commodity_pattern",
+        "@beansprout_deps//beancount",
+    ],
+)
