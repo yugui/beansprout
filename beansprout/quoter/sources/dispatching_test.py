@@ -199,12 +199,8 @@ class TestSourceDispatcher(unittest.TestCase):
                                1.25,
                                places=10)
 
-    def test_source_loading(self):
-        """Test that sources are loaded without wrapping.
-
-        Phase 5: FetchStrategy now handles batch/single fallback, so sources
-        are returned as-is without wrapper.
-        """
+    def test_source_wrapping(self):
+        """Test that sources are properly wrapped with batch capability."""
         # Mock a source without batch methods
         mock_source = MagicMock()
         # Remove batch method to simulate old source
@@ -213,12 +209,12 @@ class TestSourceDispatcher(unittest.TestCase):
 
         with patch('beansprout.quoter.sources.dispatching.get_source',
                    return_value=mock_source):
-            loaded_source = self.source._get_or_create_source('test_source')
+            wrapped_source = self.source._get_or_create_source('test_source')
 
-        # Phase 5: Source should be returned as-is (FetchStrategy handles fallback)
-        self.assertIs(loaded_source, mock_source)
-        # Batch methods are NOT added (FetchStrategy will handle fallback)
-        self.assertFalse(hasattr(loaded_source, 'get_latest_prices_batch'))
+        # Should have batch method after wrapping
+        self.assertTrue(hasattr(wrapped_source, 'get_latest_prices_batch'))
+        self.assertTrue(hasattr(wrapped_source, 'get_historical_prices_batch'))
+        self.assertTrue(hasattr(wrapped_source, 'get_prices_series_batch'))
 
     def test_source_caching(self):
         """Test that sources are cached properly."""

@@ -67,56 +67,69 @@ class QuoteFetcher:
 
     def fetch_latest_quotes(self, commodities: List[Commodity]) -> List[Price]:
         """Fetch latest price quotes for multiple commodities using source-first iteration.
-
+        
         Args:
             commodities: List of commodities to fetch quotes for.
-
+            
         Returns:
             List of Price directives for all successfully fetched quotes.
         """
-        # Phase 4: Simplified using lambda
+
+        def call_dispatcher(
+            spec_commodity_pairs: List[Tuple[SourceSpec, str]]
+        ) -> Dict[str, Price]:
+            return self._dispatch_source.fetch_latest_prices_batch(
+                spec_commodity_pairs)
+
         return self._fetch_quotes_with_systematic_fallback(
-            commodities, lambda pairs: self._dispatch_source.
-            fetch_latest_prices_batch(pairs))
+            commodities, call_dispatcher)
 
     def fetch_historical_quotes(self, commodities: List[Commodity],
                                 quote_date: datetime.date) -> List[Price]:
         """Fetch historical price quotes for multiple commodities using source-first iteration.
-
+        
         Args:
             commodities: List of commodities to fetch quotes for.
             quote_date: The specific date to fetch prices for.
-
+            
         Returns:
             List of Price directives for all successfully fetched quotes.
         """
-        # Phase 4: Simplified using lambda
-        dt = datetime.datetime.combine(quote_date, datetime.time())
+
+        def call_dispatcher(
+            spec_commodity_pairs: List[Tuple[SourceSpec, str]]
+        ) -> Dict[str, Price]:
+            dt = datetime.datetime.combine(quote_date, datetime.time())
+            return self._dispatch_source.fetch_historical_prices_batch(
+                spec_commodity_pairs, dt)
+
         return self._fetch_quotes_with_systematic_fallback(
-            commodities,
-            lambda pairs: self._dispatch_source.fetch_historical_prices_batch(
-                pairs, dt))
+            commodities, call_dispatcher)
 
     def fetch_quote_series_bulk(self, commodities: List[Commodity],
                                 start_date: datetime.date,
                                 end_date: datetime.date) -> List[Price]:
         """Fetch price series for multiple commodities using source-first iteration.
-
+        
         Args:
             commodities: List of commodities to fetch quotes for.
             start_date: The starting date for the price series.
             end_date: The ending date for the price series.
-
+            
         Returns:
             List of Price directives for all successfully fetched quotes.
         """
-        # Phase 4: Simplified using lambda
-        start_dt = datetime.datetime.combine(start_date, datetime.time())
-        end_dt = datetime.datetime.combine(end_date, datetime.time())
+
+        def call_dispatcher(
+            spec_commodity_pairs: List[Tuple[SourceSpec, str]]
+        ) -> Dict[str, List[Price]]:
+            start_dt = datetime.datetime.combine(start_date, datetime.time())
+            end_dt = datetime.datetime.combine(end_date, datetime.time())
+            return self._dispatch_source.fetch_prices_series_batch(
+                spec_commodity_pairs, start_dt, end_dt)
+
         return self._fetch_quotes_with_systematic_fallback(
-            commodities,
-            lambda pairs: self._dispatch_source.fetch_prices_series_batch(
-                pairs, start_dt, end_dt))
+            commodities, call_dispatcher)
 
     def _get_source_specs(self,
                           commodity: Commodity) -> Dict[str, List[SourceSpec]]:
